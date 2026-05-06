@@ -14,6 +14,8 @@ from grid import Grid
 from tank import Tank, TankType
 from bullet import BulletManager
 from collision import CollisionDetector
+from map_generator import LevelGenerator
+from ai.agents import AIAgentFactory
 
 
 class GamePhase(Enum):
@@ -43,16 +45,32 @@ class GameState:
         self.grid = Grid()
         self.tanks = []  # All tanks (player + enemies)
         self.bullets = BulletManager()
+        self.ai_agents = {}  # Tank -> AIAgent mapping
         self.collision_detector = CollisionDetector(
             self.grid, self.tanks, self.bullets, EAGLE_POSITION
         )
+        
+        # Generate level using CSP
+        level_gen = LevelGenerator(level)
+        level_data = level_gen.generate()
+        
+        if level_data is None:
+            print(f"ERROR: Failed to generate level {level}")
+            self.enemy_pool = []
+        else:
+            # Load generated map into grid
+            for y in range(len(level_data['map'])):
+                for x in range(len(level_data['map'][y])):
+                    self.grid.set_terrain(x, y, level_data['map'][y][x])
+            
+            # Set enemy pool
+            self.enemy_pool = level_data['enemy_pool'][:]
         
         # Player
         self.player = None
         self.player_lives = PLAYER_LIVES
         
         # Enemy management
-        self.enemy_pool = []  # Remaining enemies to spawn
         self.active_enemies = 0
         self.enemies_defeated = 0
         self.last_spawn_time = 0.0
@@ -114,8 +132,12 @@ class GameState:
         self.tanks.append(tank)
         self.active_enemies += 1
         
+        # Create AI agent for this tank
+        ai_agent = AIAgentFactory.create_agent(tank, self.grid, tank.tank_type.value, self.grid.eagle_pos if hasattr(self.grid, 'eagle_pos') else EAGLE_POSITION)
+        self.ai_agents[tank] = ai_agent
+        
         self.add_event('enemy_spawned', {
-            'type': tank_type,
+            'type': tank.tank_type.value,
             'pos': (x, y)
         })
         return tank
@@ -181,28 +203,47 @@ class GameState:
         self.tick_count += 1
         self.elapsed_time += dt
         
-        # STEP 1: INPUT - Read player keyboard input
+        # STEP 1: INPUT - Player keyboard input (with direction change reset for responsiveness)
         if input_state:
+            # Reset movement progress if direction changed (makes controls feel responsive)
+            new_direction = input_state.get('direction', 'NONE')
+            if self.player and new_direction != self.player.direction_name:
+                self.player.move_progress = 0.0
+            
+            # Update direction and shooting
             self.update_player_input(input_state)
         
         # STEP 2: AGENT DECISIONS - Each enemy AI runs its decision logic
         for tank in self.tanks:
             if tank.alive and not tank.is_player:
-                # AI agents will set their direction/shoot here (implemented in Module B)
-                pass
+                # Get AI agent for this tank
+                if tank in self.ai_agents:
+                    agent = self.ai_agents[tank]
+                    agent.decide(dt, self)
         
-        # STEP 3: MOVE - All tanks attempt to move
+        # STEP 3: MOVE - All tanks attempt to move (with speed-based fractional movement)
         for tank in self.tanks:
             if not tank.alive:
                 continue
             
             if tank.direction_name != 'NONE':
-                next_x = tank.x + tank.direction[0]
-                next_y = tank.y + tank.direction[1]
+                # Accumulate movement progress based on speed
+                # Speed is in tiles/second, dt is in seconds
+                tank.move_progress += tank.speed * dt
                 
-                if self.collision_detector.can_tank_move_to(tank, next_x, next_y):
-                    tank.x = next_x
-                    tank.y = next_y
+                # Check if we've accumulated enough progress for a full tile move
+                while tank.move_progress >= 1.0:
+                    next_x = tank.x + tank.direction[0]
+                    next_y = tank.y + tank.direction[1]
+                    
+                    if self.collision_detector.can_tank_move_to(tank, next_x, next_y):
+                        tank.x = next_x
+                        tank.y = next_y
+                        tank.move_progress -= 1.0
+                    else:
+                        # Blocked - don't move, but keep accumulated progress
+                        # Next frame when path clears, we can continue immediately
+                        break
         
         # STEP 4: SHOOT - All tanks that chose to shoot fire a bullet
         for tank in self.tanks:
@@ -237,7 +278,13 @@ class GameState:
                 self.add_event('game_over', {'reason': 'eagle_destroyed'})
         
         # Remove dead tanks
+        dead_tanks = [t for t in self.tanks if not t.alive]
         self.tanks = [t for t in self.tanks if t.alive]
+        
+        # Clean up AI agents for dead tanks
+        for tank in dead_tanks:
+            if tank in self.ai_agents:
+                del self.ai_agents[tank]
         
         # Player death
         if self.player and not self.player.alive:

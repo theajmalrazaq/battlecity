@@ -43,7 +43,10 @@ class Tank:
         # Get tank properties from config
         type_name = self.tank_type.value
         if type_name == 'PLAYER':
-            props = TANK_TYPES['BASIC']  # Player uses BASIC stats (or customize as needed)
+            props = TANK_TYPES['FAST']  # Player uses FAST stats (2.0 tiles/sec) for responsive controls
+            # Override color for player tank - make it light gray
+            props = props.copy()
+            props['color'] = (200, 200, 200)  # Light gray/white for player
         else:
             props = TANK_TYPES[type_name]
         
