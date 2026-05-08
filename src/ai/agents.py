@@ -6,6 +6,7 @@ Phase 2B: Agents & Behaviors - Module B
 import time
 import random
 from pathfinding import PathfindingFactory
+from config import DIRECTIONS
 
 
 class AIAgent:
@@ -131,7 +132,8 @@ class SimpleReflexAgent(AIAgent):
         if tank_y == player_y:
             min_x, max_x = min(tank_x, player_x), max(tank_x, player_x)
             for x in range(min_x + 1, max_x):
-                if self.grid.is_solid(x, tank_y):
+                # PDF Page 6: "Use forest tiles to dodge enemy fire"
+                if self.grid.is_solid(x, tank_y) or self.grid.get_terrain(x, tank_y) == 4: # 4 = FOREST
                     return False
             return True
         
@@ -139,7 +141,7 @@ class SimpleReflexAgent(AIAgent):
         if tank_x == player_x:
             min_y, max_y = min(tank_y, player_y), max(tank_y, player_y)
             for y in range(min_y + 1, max_y):
-                if self.grid.is_solid(tank_x, y):
+                if self.grid.is_solid(tank_x, y) or self.grid.get_terrain(tank_x, y) == 4: # 4 = FOREST
                     return False
             return True
         
@@ -215,41 +217,31 @@ class GoalBasedAgent(AIAgent):
         eagle_x, eagle_y = eagle_pos
         tank_x, tank_y = self.tank.get_position()
         
-        # Find best neighbor (greedy: lowest h(n))
-        best_neighbor = None
+        # Find best neighbor (greedy: lowest h(n) = Manhattan)
+        # Fast Tanks ignore detour - they push STRAIGHT toward the eagle
+        best_dir = None
         best_h = float('inf')
         
-        for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+        for d_name, (dx, dy) in DIRECTIONS.items():
+            if d_name == 'NONE': continue
             nx, ny = tank_x + dx, tank_y + dy
             
-            # Check if passable
-            if not game_state.collision_detector.can_tank_move_to(self.tank, nx, ny):
-                continue
-            
-            # Calculate h(n) = Manhattan distance
+            # Distance to eagle
             h = abs(nx - eagle_x) + abs(ny - eagle_y)
-            
             if h < best_h:
                 best_h = h
-                best_neighbor = (nx, ny, dx, dy)
+                best_dir = (d_name, dx, dy)
         
-        if best_neighbor:
-            nx, ny, dx, dy = best_neighbor
+        if best_dir:
+            d_name, dx, dy = best_dir
+            self.tank.set_direction(d_name)
             
-            # Set direction
-            if dx > 0:
-                self.tank.set_direction('RIGHT')
-            elif dx < 0:
-                self.tank.set_direction('LEFT')
-            elif dy > 0:
-                self.tank.set_direction('DOWN')
-            elif dy < 0:
-                self.tank.set_direction('UP')
-            
-            # Shoot if next tile is brick (never detour)
-            next_x, next_y = self.tank.get_forward_tile()
-            if game_state.grid.get_terrain(next_x, next_y) == 1:  # BRICK
-                self.tank.shoot()
+            nx, ny = tank_x + dx, tank_y + dy
+            # If next tile is brick, shoot it (never detour - spec Page 7)
+            if self.grid.get_terrain(nx, ny) == 1: # BRICK
+                if self.tank.ready_to_shoot():
+                    self.tank.shoot()
+            # If path is clear (Empty/Forest), the movement engine in GameState will handle the step
         else:
             # Stuck (no valid neighbors)
             self._move_random()
@@ -446,8 +438,9 @@ class ModelBasedReflexAgent(AIAgent):
                             return (sx, sy)
                     return (nx, ny)
                 
-                # Add neighbors to queue
-                queue.append((nx, ny))
+                # Add neighbors to queue if passable (so we can reach the steel)
+                if grid.is_passable_by_tank(nx, ny):
+                    queue.append((nx, ny))
         
         return None
 
@@ -494,6 +487,87 @@ class ModelBasedReflexAgent(AIAgent):
         self.tank.set_direction(direction)
 
 
+class UtilityAgent(AIAgent):
+    """
+    Utility-Based Agent (Power Tank).
+    
+    Agent Model: Utility-Based (calculates score for each action)
+    Search Algorithm: Utility Evaluation
+    Behavior: Complex decision making, balances eagle and player threats
+    
+    Utility(action) = w1*EagleDist + w2*PlayerDist + w3*CombatPot + w4*Stealth
+    """
+    def __init__(self, tank, grid, eagle_pos=None):
+        super().__init__(tank, grid, eagle_pos)
+        self.weights = {
+            'eagle': 2.0,      # High priority to win
+            'player': 1.0,     # Medium priority to engage player
+            'combat': 5.0,     # Very high priority if shot is possible
+            'forest': 0.5      # Slight bonus for hiding
+        }
+
+    def decide(self, dt, game_state):
+        if not self.tank.alive: return
+        self.last_decision_time += dt
+        
+        best_action = 'NONE'
+        max_utility = -float('inf')
+        
+        tank_x, tank_y = self.tank.get_position()
+        player = game_state.player
+        
+        for d_name, (dx, dy) in DIRECTIONS.items():
+            if d_name == 'NONE': continue
+            nx, ny = tank_x + dx, tank_y + dy
+            if not self.grid.is_valid(nx, ny): continue
+            
+            # 1. Eagle Utility (Inverse Manhattan)
+            eagle_dist = abs(nx - self.eagle_pos[0]) + abs(ny - self.eagle_pos[1])
+            u_eagle = (1.0 / (eagle_dist + 1)) * self.weights['eagle']
+            
+            # 2. Player Utility
+            u_player = 0
+            if player and player.alive:
+                p_dist = abs(nx - player.x) + abs(ny - player.y)
+                u_player = (1.0 / (p_dist + 1)) * self.weights['player']
+                
+                # 3. Combat Utility (Line of Sight)
+                if self._can_see(nx, ny, player.x, player.y):
+                    u_player += self.weights['combat']
+            
+            # 4. Stealth Utility (Forest)
+            u_stealth = 0
+            if self.grid.get_terrain(nx, ny) == 4: # FOREST
+                u_stealth = self.weights['forest']
+            
+            total_utility = u_eagle + u_player + u_stealth
+            
+            # Add some randomness to avoid getting stuck
+            total_utility += random.uniform(0, 0.1)
+            
+            if total_utility > max_utility:
+                max_utility = total_utility
+                best_action = d_name
+        
+        self.tank.set_direction(best_action)
+        # Check shooting
+        if player and player.alive:
+            if self._can_see(self.tank.x, self.tank.y, player.x, player.y):
+                self.tank.shoot()
+
+    def _can_see(self, x1, y1, x2, y2):
+        if x1 == x2:
+            for y in range(int(min(y1, y2)) + 1, int(max(y1, y2))):
+                # FOREST blocks utility vision
+                if self.grid.is_solid(x1, y) or self.grid.get_terrain(x1, y) == 4: return False
+            return True
+        if y1 == y2:
+            for x in range(int(min(x1, x2)) + 1, int(max(x1, x2))):
+                if self.grid.is_solid(x, y1) or self.grid.get_terrain(x, y1) == 4: return False
+            return True
+        return False
+
+
 class AIAgentFactory:
     """Factory to create appropriate agent for a tank type."""
 
@@ -522,6 +596,8 @@ class AIAgentFactory:
             return GoalBasedAgent(tank, grid, eagle_pos)
         elif tank_type == 'ARMOR':
             return ModelBasedReflexAgent(tank, grid, eagle_pos)
+        elif tank_type == 'POWER':
+            return UtilityAgent(tank, grid, eagle_pos)
         elif tank_type == 'BOSS':
             from .boss import BossAgent
             return BossAgent(tank, grid, eagle_pos)

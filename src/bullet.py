@@ -116,21 +116,23 @@ class BulletManager:
 
     def update_bullets(self, dt):
         """
-        Update all active bullets and remove destroyed ones.
-        
-        Args:
-            dt: Delta time in seconds
+        Update all active bullets with sub-frame precision.
+        Splits movement into 2 sub-steps to prevent "phasing" through thin walls.
         """
-        for bullet in self.bullets[:]:  # Iterate over copy
-            if bullet.alive:
-                bullet.update(dt)
-                # Destroy bullets that fly out of bounds
-                bx, by = int(bullet.x), int(bullet.y)
-                if bx < 0 or bx >= 26 or by < 0 or by >= 26:
-                    bullet.destroy()
+        steps = 2
+        sub_dt = dt / steps
+        
+        for _ in range(steps):
+            for bullet in self.bullets[:]:
+                if bullet.alive:
+                    bullet.update(sub_dt)
+                    # Boundary check
+                    bx, by = int(bullet.x), int(bullet.y)
+                    if bx < 0 or bx >= 26 or by < 0 or by >= 26:
+                        bullet.destroy()
+                        if bullet in self.bullets: self.bullets.remove(bullet)
+                elif bullet in self.bullets:
                     self.bullets.remove(bullet)
-            else:
-                self.bullets.remove(bullet)
 
     def destroy_bullet(self, bullet):
         """Remove a bullet from play."""

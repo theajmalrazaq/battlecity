@@ -120,16 +120,13 @@ class LevelGenerator:
                     if random.random() < 0.6:
                         self.map[y][x] = TERRAIN['BRICK']
         
-        # Create water obstacles (randomized positions, keep 3 rows pattern)
-        water_rows = [start_y + random.randint(2, 4), 
-                      start_y + random.randint(5, 8),
-                      start_y + random.randint(9, 10)]
-        
-        for y in water_rows:
-            if start_y <= y < start_y + arena_size:
-                for x in range(start_x + 2, start_x + arena_size - 2, random.randint(4, 6)):
-                    if 0 <= y < GRID_HEIGHT and 0 <= x < GRID_WIDTH:
-                        self.map[y][x] = TERRAIN['WATER']
+        # Create exactly one water patch (random 2x2 or 1x2 area)
+        water_x = start_x + random.randint(2, 8)
+        water_y = start_y + random.randint(2, 8)
+        for wy in range(water_y, water_y + 2):
+            for wx in range(water_x, water_x + 2):
+                if start_x <= wx < start_x + arena_size and start_y <= wy < start_y + arena_size:
+                    self.map[wy][wx] = TERRAIN['WATER']
         
         # Boss arena has NO eagle tile — win/lose decided by boss HP and player lives only
         

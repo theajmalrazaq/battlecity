@@ -44,9 +44,9 @@ class BattleCityGame:
         # Pygame
         if self.use_graphics:
             pygame.init()
-            self.screen = pygame.display.set_mode(
-                (GRID_WIDTH * TILE_SIZE, GRID_HEIGHT * TILE_SIZE)
-            )
+            self.WIDTH = GRID_WIDTH * TILE_SIZE
+            self.HEIGHT = GRID_HEIGHT * TILE_SIZE + 40 # Padding for HUD
+            self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
             pygame.display.set_caption(f"Battle City - Level {level}")
             self.clock = pygame.time.Clock()
             # Pre-create font objects (BUG 8 fix: not per-frame)
@@ -55,6 +55,60 @@ class BattleCityGame:
         
         self.running = True
         self.paused = False
+        
+        # Sprite assets
+        if self.use_graphics:
+            self._load_assets()
+
+    def _load_assets(self):
+        """Load and scale sprite assets."""
+        self.sprites = {}
+        asset_dir = os.path.join(os.path.dirname(__file__), 'assets')
+        
+        if not os.path.exists(asset_dir):
+            print(f"Warning: assets directory not found at {asset_dir}")
+            return
+            
+        try:
+            # Helper to load, scale, and handle alpha
+            def load_scaled(name, size=(TILE_SIZE, TILE_SIZE)):
+                path = os.path.join(asset_dir, f"{name}.png")
+                if os.path.exists(path):
+                    # Load as RGBA to respect the deep clean we just did
+                    surf = pygame.image.load(path).convert_alpha()
+                    return pygame.transform.scale(surf, size)
+                return None
+
+            # Load terrain
+            self.sprites['tile_brick'] = load_scaled('tile_brick')
+            self.sprites['tile_steel'] = load_scaled('tile_steel')
+            self.sprites['tile_water'] = load_scaled('tile_water')
+            self.sprites['tile_forest'] = load_scaled('tile_forest')
+            self.sprites['tile_eagle'] = load_scaled('tile_eagle')
+            
+            # Load tanks and create rotations
+            tank_types = ['player', 'basic', 'fast', 'armor', 'power', 'boss']
+            for t_type in tank_types:
+                base = load_scaled(f"tank_{t_type}")
+                if base:
+                    # Map directions to rotation angles (assuming base faces UP)
+                    # Fixed inversion: UP=base, DOWN=180, LEFT=90, RIGHT=270
+                    self.sprites[f"tank_{t_type}_UP"] = base
+                    self.sprites[f"tank_{t_type}_LEFT"] = pygame.transform.rotate(base, 90)
+                    self.sprites[f"tank_{t_type}_DOWN"] = pygame.transform.rotate(base, 180)
+                    self.sprites[f"tank_{t_type}_RIGHT"] = pygame.transform.rotate(base, 270)
+            
+            # Bullet sprites (Colored based on owner)
+            self.sprites['bullet_player'] = pygame.Surface((6, 6), pygame.SRCALPHA)
+            pygame.draw.circle(self.sprites['bullet_player'], (0, 255, 255), (3, 3), 3) # Cyan
+            pygame.draw.circle(self.sprites['bullet_player'], (255, 255, 255), (3, 3), 1)
+            
+            self.sprites['bullet_enemy'] = pygame.Surface((6, 6), pygame.SRCALPHA)
+            pygame.draw.circle(self.sprites['bullet_enemy'], (255, 200, 0), (3, 3), 3) # Yellow/Orange
+            pygame.draw.circle(self.sprites['bullet_enemy'], (255, 255, 255), (3, 3), 1)
+
+        except Exception as e:
+            print(f"Error loading assets: {e}")
 
     def _setup_level(self):
         """
@@ -108,36 +162,51 @@ class BattleCityGame:
         
         if not self.paused:
             keys = pygame.key.get_pressed()
-            # Check direction keys with equal priority (first pressed wins if multiple)
-            if keys[pygame.K_UP]:
-                input_state['direction'] = 'UP'
-            elif keys[pygame.K_DOWN]:
-                input_state['direction'] = 'DOWN'
-            elif keys[pygame.K_LEFT]:
-                input_state['direction'] = 'LEFT'
-            elif keys[pygame.K_RIGHT]:
-                input_state['direction'] = 'RIGHT'
+            # Check direction keys
+            new_dir = 'NONE'
+            if keys[pygame.K_UP]: new_dir = 'UP'
+            elif keys[pygame.K_DOWN]: new_dir = 'DOWN'
+            elif keys[pygame.K_LEFT]: new_dir = 'LEFT'
+            elif keys[pygame.K_RIGHT]: new_dir = 'RIGHT'
             
-            # Also allow held shoot (get_pressed fallback for held key)
+            input_state['direction'] = new_dir
+            
+            # SHOOTING (Isolated from direction)
+            # Remove SPACE from shoot to avoid pause conflict
             if keys[pygame.K_b] or keys[pygame.K_LSHIFT]:
                 input_state['shoot'] = True
         
         return input_state
 
-    def render(self):
+    def render(self, flip=True):
         """Render the game using pygame."""
         if not self.use_graphics:
             return
         
-        # Draw terrain fresh each frame (BUG 2 fix: cache was never updated on brick destroy)
+        # Draw background (Pure Black)
+        self.screen.fill((0, 0, 0))
+        
+        # Draw terrain (Offset by 40px for HUD)
+        y_offset = 40
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
                 terrain = self.state.grid.get_terrain(x, y)
-                color = self._get_terrain_color(terrain)
-                pygame.draw.rect(
-                    self.screen, color,
-                    (x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-                )
+                if terrain == TERRAIN['EMPTY']:
+                    continue
+                
+                sprite = None
+                if terrain == TERRAIN['BRICK']: sprite = self.sprites.get('tile_brick')
+                elif terrain == TERRAIN['STEEL']: sprite = self.sprites.get('tile_steel')
+                elif terrain == TERRAIN['WATER']: sprite = self.sprites.get('tile_water')
+                elif terrain == TERRAIN['FOREST']: sprite = self.sprites.get('tile_forest')
+                elif terrain == TERRAIN['EAGLE']: sprite = self.sprites.get('tile_eagle')
+                
+                draw_pos = (x * TILE_SIZE, y * TILE_SIZE + y_offset)
+                if sprite:
+                    self.screen.blit(sprite, draw_pos)
+                else:
+                    color = self._get_terrain_color(terrain)
+                    pygame.draw.rect(self.screen, color, (draw_pos[0], draw_pos[1], TILE_SIZE, TILE_SIZE))
         
         # Draw tanks
         for tank in self.state.tanks:
@@ -151,51 +220,86 @@ class BattleCityGame:
         # Draw HUD
         self._draw_hud()
         
-        pygame.display.flip()
+        if flip:
+            pygame.display.flip()
 
     def _get_terrain_color(self, terrain):
-        """Get color for terrain type."""
+        """Get color for terrain type (Fallback)."""
         colors = {
-            TERRAIN['EMPTY']: (80, 80, 90),           # Dark gray
-            TERRAIN['BRICK']: (200, 100, 50),         # Orange (unchanged)
-            TERRAIN['STEEL']: (0, 200, 255),          # Bright cyan - more prominent
-            TERRAIN['WATER']: (0, 120, 255),          # Brighter blue
-            TERRAIN['FOREST']: (50, 150, 50),         # Green (unchanged)
-            TERRAIN['EAGLE']: (255, 200, 0)           # Yellow (unchanged)
+            TERRAIN['EMPTY']: (0, 0, 0),             # Pure black background
+            TERRAIN['BRICK']: (200, 100, 50),
+            TERRAIN['STEEL']: (100, 100, 120),
+            TERRAIN['WATER']: (0, 0, 255),
+            TERRAIN['FOREST']: (0, 255, 0),
+            TERRAIN['EAGLE']: (255, 215, 0)
         }
-        return colors.get(terrain, (80, 80, 90))
+        return colors.get(terrain, (0, 0, 0))
 
     def _draw_tank(self, tank):
-        """Draw a tank on screen."""
-        x, y = tank.x * TILE_SIZE + TILE_SIZE // 2, tank.y * TILE_SIZE + TILE_SIZE // 2
+        """Draw a tank on screen using sprites with smooth pixel interpolation."""
+        y_offset = 40
         
-        # Player tank: smaller with border for better visibility
+        # SMOOTH INTERPOLATION: Calculate visual pixel position
+        # Fix: If not moving, don't interpolate (prevents phasing through walls)
+        visual_x = tank.x
+        visual_y = tank.y
+        if tank.direction_name != 'NONE' and tank.move_progress < 1.0:
+            visual_x += tank.direction[0] * tank.move_progress
+            visual_y += tank.direction[1] * tank.move_progress
+        
+        # Convert to screen coordinates
+        rect_x, rect_y = visual_x * TILE_SIZE, visual_y * TILE_SIZE + y_offset
+        
+        # Determine sprite key
+        t_type = tank.tank_type.value.lower()
         if tank.is_player:
-            radius = TILE_SIZE // 3
-            pygame.draw.circle(self.screen, tank.color, (x, y), radius)
-            pygame.draw.circle(self.screen, (255, 255, 0), (x, y), radius + 2, 2)  # Yellow border
+            t_type = 'player'
+        
+        # Get direction (default to UP if NONE)
+        d_name = tank.direction_name
+        if d_name == 'NONE':
+            d_name = 'UP'
+            
+        sprite_key = f"tank_{t_type}_{d_name}"
+        sprite = self.sprites.get(sprite_key)
+        
+        if sprite:
+            self.screen.blit(sprite, (rect_x, rect_y))
         else:
-            # Enemy tanks: even smaller
-            radius = TILE_SIZE // 4
+            # Fallback to primitive shapes
+            x, y = rect_x + TILE_SIZE // 2, rect_y + TILE_SIZE // 2
+            radius = TILE_SIZE // 3 if tank.is_player else TILE_SIZE // 4
             pygame.draw.circle(self.screen, tank.color, (x, y), radius)
+            if tank.is_player:
+                pygame.draw.circle(self.screen, (255, 255, 0), (x, y), radius + 2, 2)
         
-        # Draw direction indicator
-        indicator_length = TILE_SIZE // 5
-        dir_x = x + (tank.direction[0] * indicator_length)
-        dir_y = y + (tank.direction[1] * indicator_length)
-        pygame.draw.line(self.screen, (255, 255, 255), (x, y), (dir_x, dir_y), 2)
-        
-        # Draw HP if armor tank (BUG 8 fix: use pre-created font)
+        # Draw health bar for Armor/Boss tanks
         if tank.hp > 1:
-            hp_text = self._font_small.render(str(tank.hp), True, (255, 255, 255))
-            self.screen.blit(hp_text, (x - 8, y - 8))
+            bar_width = TILE_SIZE - 4
+            bar_height = 4
+            fill = (tank.hp / tank.max_hp) * bar_width
+            
+            # Background (Red)
+            pygame.draw.rect(self.screen, (100, 0, 0), (rect_x + 2, rect_y + 2, bar_width, bar_height))
+            # Foreground (Green)
+            pygame.draw.rect(self.screen, (0, 255, 0), (rect_x + 2, rect_y + 2, fill, bar_height))
+            # Border
+            pygame.draw.rect(self.screen, (255, 255, 255), (rect_x + 2, rect_y + 2, bar_width, bar_height), 1)
 
     def _draw_bullet(self, bullet):
         """Draw a bullet on screen."""
+        y_offset = 40
         bx, by = bullet.get_precise_position()
         x = bx * TILE_SIZE + TILE_SIZE // 2
-        y = by * TILE_SIZE + TILE_SIZE // 2
-        pygame.draw.circle(self.screen, (255, 255, 0), (int(x), int(y)), 3)
+        y = by * TILE_SIZE + TILE_SIZE // 2 + y_offset
+        
+        sprite_key = 'bullet_player' if bullet.owner and bullet.owner.is_player else 'bullet_enemy'
+        sprite = self.sprites.get(sprite_key)
+        if sprite:
+            self.screen.blit(sprite, (int(x) - 3, int(y) - 3))
+        else:
+            color = (0, 255, 255) if bullet.owner and bullet.owner.is_player else (255, 255, 0)
+            pygame.draw.circle(self.screen, color, (int(x), int(y)), 3)
 
     def _draw_hud(self):
         """Draw heads-up display."""
@@ -206,8 +310,7 @@ class BattleCityGame:
         status = self.state.get_status()
         
         texts = [
-            f"Level: {status['level']}",
-            f"Lives: {status['player_lives']}",
+            f"LVL {status['level']} | LIVES: {status['player_lives']}",
         ]
         
         # Add boss info if boss level
@@ -219,31 +322,32 @@ class BattleCityGame:
                     break
             
             if boss_tank:
-                phase_labels = {1: 'Aggressive', 2: 'Tactical', 3: 'Desperate'}
-                phase_label = phase_labels.get(boss_tank.phase, '?')
-                texts.append(f"BOSS HP: {boss_tank.hp}/10 | Phase {boss_tank.phase}: {phase_label}")
-                texts.append(f"Destroy the Boss to win!")
+                phase_label = {1: 'AGGR', 2: 'TACT', 3: 'DESP'}.get(boss_tank.phase, '?')
+                texts.append(f"BOSS HP: {boss_tank.hp}/10 | {phase_label}")
             else:
-                texts.append("Boss defeated!")
+                texts.append("BOSS DEFEATED!")
         else:
-            # Total enemies = initial pool size (defeated + remaining + active)
-            total_enemies = status['enemies_defeated'] + status['enemies_remaining'] + status['active_enemies']
-            texts.append(f"Enemies: {status['enemies_defeated']}/{total_enemies}")
-            texts.append(f"Active: {status['active_enemies']} | Remaining: {status['enemies_remaining']}")
+            texts.append(f"ENEMY: {status['enemies_defeated']} | REM: {status['enemies_remaining']}")
         
-        texts.extend([
-            f"Bullets: {status['bullets_active']}",
-            f"Time: {status['time']:.1f}s",
-        ])
+        texts.append(f"TIME: {status['time']:.0f}s")
         
-        texts.append("CONTROLS: Arrow Keys=Move | B / Shift=Shoot | Space=Pause | ESC=Quit")
+        # Draw sleek dark HUD bar at top
+        pygame.draw.rect(self.screen, (20, 20, 25), (0, 0, self.WIDTH, 40))
+        pygame.draw.line(self.screen, (255, 200, 50), (0, 39), (self.WIDTH, 39), 2) # Golden divider
+        
+        font = pygame.font.Font(None, 24)
+        hud_str = "   ".join(texts)
+        surface = font.render(hud_str, True, (255, 255, 255))
+        self.screen.blit(surface, (20, 10))
+        
+        # Small controls text at bottom
+        ctrl_font = pygame.font.Font(None, 18)
+        ctrl_surface = ctrl_font.render("ARROWS: Move | B: Shoot | SPACE: Pause", True, (100, 100, 100))
+        self.screen.blit(ctrl_surface, (self.WIDTH - 250, self.HEIGHT - 20))
         
         if self.paused:
-            texts.insert(0, "PAUSED - Press Space to Resume")
-        
-        for i, text in enumerate(texts):
-            surface = font.render(text, True, (255, 255, 255))
-            self.screen.blit(surface, (10, 10 + i * 30))
+            pause_surface = font.render("PAUSED", True, (255, 255, 0))
+            self.screen.blit(pause_surface, (self.WIDTH // 2 - 40, self.HEIGHT // 2))
 
     def run(self):
         """Main game loop."""
@@ -326,23 +430,28 @@ class BattleCityGame:
                         # Allow restart with space
                         return
             
-            # Render background
-            self.render()
+            # Render base layer
+            self.render(flip=False)
             
-            # Add game over message (large)
+            # Semi-transparent overlay
+            overlay = pygame.Surface((self.WIDTH, self.HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 180))
+            self.screen.blit(overlay, (0, 0))
+            
+            # Message
             font_big = pygame.font.Font(None, 56)
             surface = font_big.render(title_msg, True, color)
-            self.screen.blit(surface, (GRID_WIDTH * TILE_SIZE // 2 - 300, GRID_HEIGHT * TILE_SIZE // 2 - 80))
+            self.screen.blit(surface, (self.WIDTH // 2 - surface.get_width() // 2, self.HEIGHT // 2 - 80))
             
-            # Add stats
+            # Stats
             font_medium = pygame.font.Font(None, 32)
-            stats = [
-                f"Lives: {status['player_lives']} | Enemies: {status['enemies_defeated']} | Time: {status['time']:.1f}s",
-                "Press ESC to return to menu or close window"
-            ]
-            for i, stat in enumerate(stats):
-                surface = font_medium.render(stat, True, (200, 200, 200))
-                self.screen.blit(surface, (GRID_WIDTH * TILE_SIZE // 2 - 250, GRID_HEIGHT * TILE_SIZE // 2 + 50 + i * 40))
+            stat_text = f"Lives: {status['player_lives']} | Enemies: {status['enemies_defeated']} | Time: {status['time']:.1f}s"
+            surface = font_medium.render(stat_text, True, (200, 200, 200))
+            self.screen.blit(surface, (self.WIDTH // 2 - surface.get_width() // 2, self.HEIGHT // 2 + 20))
+            
+            # Prompt
+            surface = font_medium.render("Press SPACE to return to menu", True, (255, 255, 255))
+            self.screen.blit(surface, (self.WIDTH // 2 - surface.get_width() // 2, self.HEIGHT // 2 + 80))
             
             pygame.display.flip()
             self.clock.tick(60)

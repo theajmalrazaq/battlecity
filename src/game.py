@@ -8,7 +8,7 @@ from enum import Enum
 from config import (
     DIRECTIONS, TERRAIN, GAME_STATE, SPAWN_POINTS, PLAYER_SPAWN, EAGLE_POSITION,
     PLAYER_LIVES, MAX_ACTIVE_TANKS, SPAWN_DELAY, LEVEL_ENEMY_POOL,
-    FPS, SPAWN_FAIRNESS_DISTANCE
+    FPS, SPAWN_FAIRNESS_DISTANCE, LEVEL_CONFIG
 )
 import random
 from grid import Grid
@@ -41,6 +41,7 @@ class GameState:
         """
         self.level = level
         self.phase = GamePhase.PLAYING
+        self.level_config = LEVEL_CONFIG.get(level, LEVEL_CONFIG[1])
         
         # Core systems
         self.grid = Grid()
@@ -198,25 +199,31 @@ class GameState:
         if self.active_enemies >= MAX_ACTIVE_TANKS:
             return  # Max active tanks reached
         
+        # Manage Spawning
         self.last_spawn_time += dt
         if self.last_spawn_time >= SPAWN_DELAY:
-            self.last_spawn_time = 0.0
-            
-            # Level 1 kill-gating: Fast tanks only spawn after 10 kills (PDF §Level 1)
-            # "First 7 kills are Basic Tanks. Final 5 Fast Tanks spawn after 10 kills."
-            next_type = self.enemy_pool[0]
-            next_type_str = next_type.value if hasattr(next_type, 'value') else str(next_type)
-            if self.level == 1 and next_type_str == 'FAST' and self.enemies_defeated < 10:
-                return  # Hold Fast tanks until 10 enemies have been defeated
-            
-            # Spawn next enemy from pool
-            tank_type = self.enemy_pool.pop(0)
-            tank = self.spawn_enemy(tank_type)
-            if tank:
-                return
-            else:
-                # If fairness constraint blocked spawn, try again next cycle
-                self.enemy_pool.insert(0, tank_type)
+            if self.enemy_pool and self.active_enemies < self.level_config['max_active']:
+                # Level 1 kill-gating: Fast tanks only spawn after 10 kills
+                next_type = self.enemy_pool[0]
+                next_type_str = next_type.value if hasattr(next_type, 'value') else str(next_type)
+                if self.level == 1 and next_type_str == 'FAST' and self.enemies_defeated < 10:
+                    return # Wait for more kills
+                
+                # CHOOSE POINT FIRST
+                from config import SPAWN_POINTS
+                spawn_point = random.choice(SPAWN_POINTS)
+                
+                # CHECK IF CLEAR
+                is_clear = True
+                for t in self.tanks:
+                    if t.alive and abs(t.x - spawn_point[0]) < 1 and abs(t.y - spawn_point[1]) < 1:
+                        is_clear = False
+                        break
+                
+                if is_clear:
+                    tank_type = self.enemy_pool.pop(0)
+                    self.spawn_enemy(tank_type, x=spawn_point[0], y=spawn_point[1])
+                    self.last_spawn_time = 0.0
 
     def update_player_input(self, input_state):
         """
@@ -233,7 +240,11 @@ class GameState:
         
         # Update direction
         if direction in DIRECTIONS:
-            self.player.set_direction(direction)
+            if direction != 'NONE':
+                self.player.set_direction(direction)
+            elif self.player.move_progress == 0.0:
+                # Only stop if we've reached a grid intersection
+                self.player.set_direction('NONE')
         
         # Queue shot if requested
         if shoot and self.player.ready_to_shoot():
@@ -272,33 +283,30 @@ class GameState:
                 continue
             
             if tank.direction_name != 'NONE':
-                # Player: move 1 tile per keypress with cooldown for controlled navigation
-                if tank.is_player:
-                    if tank.move_cooldown <= 0.0:
-                        next_x = tank.x + tank.direction[0]
-                        next_y = tank.y + tank.direction[1]
-                        
-                        if self.collision_detector.can_tank_move_to(tank, next_x, next_y):
-                            tank.x = next_x
-                            tank.y = next_y
-                            tank.move_cooldown = 0.15  # 150ms cooldown between moves
-                else:
-                    # Enemies: use time-based movement (speed-based)
+                # ALL TANKS: use smooth time-based movement
+                # CRITICAL FIX: Only accumulate progress if the NEXT tile is actually passable
+                # This prevents the tank from "penetrating" halfway into a wall
+                next_x = tank.x + tank.direction[0]
+                next_y = tank.y + tank.direction[1]
+                
+                if self.collision_detector.can_tank_move_to(tank, next_x, next_y):
                     tank.move_progress += tank.speed * dt
-                    
-                    # Check if we've accumulated enough progress for a full tile move
-                    while tank.move_progress >= 1.0:
+                else:
+                    tank.move_progress = 0.0 # Stop immediately if blocked
+                
+                # Check if we've accumulated enough progress for a full tile move
+                while tank.move_progress >= 1.0:
+                    # Re-verify path at the moment of transition
+                    if self.collision_detector.can_tank_move_to(tank, next_x, next_y):
+                        tank.x = next_x
+                        tank.y = next_y
+                        tank.move_progress -= 1.0
+                        # Update next_x/y for multi-tile progress
                         next_x = tank.x + tank.direction[0]
                         next_y = tank.y + tank.direction[1]
-                        
-                        if self.collision_detector.can_tank_move_to(tank, next_x, next_y):
-                            tank.x = next_x
-                            tank.y = next_y
-                            tank.move_progress -= 1.0
-                        else:
-                            # Blocked - don't move, but keep accumulated progress
-                            # Next frame when path clears, we can continue immediately
-                            break
+                    else:
+                        tank.move_progress = 0.0
+                        break
         
         # Check for enemy collision with player (damage — only on ENTRY, not every frame)
         # BUG 6 fix: without this, an enemy standing on the player deals 60 HP/sec

@@ -12,6 +12,7 @@ class TankType(Enum):
     BASIC = 'BASIC'
     FAST = 'FAST'
     ARMOR = 'ARMOR'
+    POWER = 'POWER'
     BOSS = 'BOSS'
     PLAYER = 'PLAYER'
 
@@ -19,14 +20,31 @@ class TankType(Enum):
 class Tank:
     """
     Base Tank class. Represents any tank in the game (player or enemy).
-    
-    Properties:
-    - Position (x, y): Grid coordinates
-    - Direction: Current facing direction (UP, DOWN, LEFT, RIGHT)
-    - HP: Health points
-    - Movement: Tile-based movement (1 tile at a time)
-    - Shooting: Can fire one bullet at a time
     """
+    # Type hints for editor/linter satisfaction
+    tank_type: TankType
+    x: int
+    y: int
+    hp: int
+    max_hp: int
+    speed: float
+    fire_rate: float
+    direction: tuple
+    direction_name: str
+    alive: bool
+    color: tuple
+    ai_state: dict
+    damage_colors: dict
+    is_moving: bool
+    move_progress: float
+    target_x: int
+    target_y: int
+    move_cooldown: float
+    has_bullet: bool
+    fire_cooldown: float
+    is_player: bool
+    ai_type: str
+    sprite: any
 
     def __init__(self, tank_type, x, y, is_player=False):
         """
@@ -39,6 +57,9 @@ class Tank:
         """
         self.tank_type = tank_type if isinstance(tank_type, TankType) else TankType[tank_type]
         self.is_player = is_player
+        
+        # Explicit initialization to avoid linter "possibly unbound" warnings
+        props = {}
         
         # Get tank properties from config
         type_name = self.tank_type.value
@@ -82,16 +103,38 @@ class Tank:
         self.sprite = None
         
         # Hit flash (GAP 14 - PDF: Armor tank flashes on each hit to show damage stage)
-        self.hit_flash_timer = 0.0  # Counts down from 0.3s after each hit
+        self.hit_flash_timer = 0.0
+        
+        # Color mapping for damage stages (Armor tanks - PDF Page 8)
+        self.damage_colors = {
+            4: (200, 100, 50), # Full (Orange-ish)
+            3: (255, 150, 0),  # Hit 1 (Bright Orange)
+            2: (255, 50, 0),   # Hit 2 (Red-Orange)
+            1: (150, 0, 0)     # Hit 3 (Dark Red)
+        }
         
         # Alive flag
         self.alive = True
 
     def take_damage(self, amount=1):
-        """Reduce HP by amount. Returns True if tank is destroyed."""
+        """
+        Reduce HP by amount. Returns True if tank is destroyed.
+        Includes hit-flash and color-stage logic.
+        """
         self.hp -= amount
-        # Trigger hit-flash visual (rendering layer reads hit_flash_timer > 0 to draw white)
-        self.hit_flash_timer = 0.3
+        
+        # MODEL-BASED REFLEX: Track hit count for Armor tanks (PDF Page 8)
+        if self.tank_type == TankType.ARMOR:
+            current_hits = self.ai_state.get('hit_count', 0)
+            self.ai_state['hit_count'] = current_hits + amount
+            
+            # Change color based on HP stage
+            if self.hp in self.damage_colors:
+                self.color = self.damage_colors[self.hp]
+        
+        # Trigger hit-flash visual (0.15s white flash)
+        self.hit_flash_timer = 0.15
+        
         if self.hp <= 0:
             self.alive = False
             return True
@@ -198,73 +241,23 @@ class BossTank(Tank):
         """
         super().__init__(TankType.BOSS, x, y, is_player=False)
         
-        # Boss-specific stats
+        # Boss-specific stats (PDF Page 9: Phase 1 = Slow)
         self.max_hp = 10
         self.hp = 10
-        self.speed = 0.2  # Adjusted per phase
-        self.fire_rate = 2.0  # Phase 1 fire rate (1 bullet every 2 seconds)
+        self.speed = 1.5      # Phase 1: Slow (BossAgent._update_phase manages this)
+        self.fire_rate = 2.0  # Phase 1: 1 bullet per 2 seconds
         self.color = (200, 0, 0)  # Bright red for boss
         self.ai_type = 'adversarial'
         
-        # Boss phases
-        self.phase = 1  # 1 (aggressive), 2 (tactical), 3 (desperate)
-        self.phase_transition_time = 0.0
-        
-        # Boss abilities
-        self.regeneration_active = False
-        self.regeneration_timer = 0.0
-        self.regeneration_rate = 0.5  # HP per second in phase 3
-        self.aura_damage = 0.2  # Damage per tick to nearby player
-        self.aura_range = 2  # Tiles
-        self.rapid_fire_mode = False
-        self.rapid_fire_timer = 0.0
-        self.rapid_fire_cooldown = 0.3  # Faster fire in phase 2+
+        # Boss phases (managed by BossAgent — this is just for HUD display)
+        self.phase = 1
     
     def update(self, dt):
         """
         Update boss tank state (override parent).
-        
-        Args:
-            dt: Delta time in seconds
+        Phase management is handled by BossAgent._update_phase() to avoid conflicts.
         """
         super().update(dt)
-        
-        # Update phase based on health (spec: Phase 1: 10-7, Phase 2: 6-3, Phase 3: 2-1)
-        old_phase = self.phase
-        if self.hp >= 7:
-            self.phase = 1  # Aggressive (10-7 HP)
-        elif self.hp >= 3:
-            self.phase = 2  # Tactical (6-3 HP)
-        else:
-            self.phase = 3  # Desperate (2-1 HP)
-        
-        # Activate/deactivate abilities based on phase
-        if self.phase == 1:
-            # Phase 1 (Aggressive): Normal fire rate
-            self.fire_rate = 2.0  # 1 bullet every 2 seconds
-            self.regeneration_active = False
-            self.rapid_fire_mode = False
-        elif self.phase == 2:
-            # Phase 2 (Tactical): Faster fire rate
-            self.fire_rate = 1.5  # 1 bullet every 1.5 seconds (33% faster)
-            self.regeneration_active = False
-            self.rapid_fire_mode = True
-        else:
-            # Phase 3 (Desperate): Fastest fire rate + regeneration
-            self.fire_rate = 0.8  # 1 bullet every 0.8 seconds (60% faster than Phase 1)
-            self.regeneration_active = True
-            self.rapid_fire_mode = True
-            
-            # Heal over time
-            self.regeneration_timer += dt
-            if self.regeneration_timer >= 1.0:
-                if self.hp < self.max_hp:
-                    self.hp = min(self.hp + 1, self.max_hp)
-                    self.regeneration_timer = 0.0
-        
-        # Update rapid fire cooldown
-        if self.rapid_fire_mode:
-            self.rapid_fire_timer += dt
     
     def take_damage(self, amount=1):
         """
@@ -279,28 +272,11 @@ class BossTank(Tank):
         old_hp = self.hp
         destroyed = super().take_damage(amount)
         
-        # Update phase immediately after damage (spec: Phase 1: 10-7, Phase 2: 6-3, Phase 3: 2-1)
-        if self.hp >= 7:
-            self.phase = 1
-            self.regeneration_active = False
-            self.rapid_fire_mode = False
-            self.fire_rate = 2.0  # Phase 1: 1 bullet every 2 seconds
-        elif self.hp >= 3:
-            self.phase = 2
-            self.regeneration_active = False
-            self.fire_rate = 1.5  # Phase 2: 1 bullet every 1.5 seconds
-            self.rapid_fire_mode = True
-        else:
-            self.phase = 3
-            self.regeneration_active = True
-            self.fire_rate = 0.8  # Phase 3: 1 bullet every 0.8 seconds
-            self.rapid_fire_mode = True
-        
-        # Print phase change notification
-        if old_hp > 7 and self.hp <= 7:
-            print("Boss entering Phase 2 - TACTICAL MODE!")
-        elif old_hp > 3 and self.hp <= 3:
-            print("Boss entering Phase 3 - DESPERATE MODE with regeneration!")
+        # Log phase transitions (BossAgent handles the actual stat changes)
+        if old_hp >= 8 and self.hp <= 7:
+            print(f"Boss hit! HP: {self.hp}/10")
+        elif old_hp >= 4 and self.hp <= 3:
+            print(f"Boss critically wounded! HP: {self.hp}/10")
         
         return destroyed
     

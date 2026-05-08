@@ -45,6 +45,8 @@ class BossAIEngine:
         self.player_pos = player_pos
         self.max_depth = depth
         self.nodes_explored = 0
+        self.nodes_standard = 0
+        self.nodes_pruned = 0
         self.cutoffs = 0  # Alpha-beta pruning cutoffs
 
     def decide(self, game_state):
@@ -73,8 +75,10 @@ class BossAIEngine:
             alpha = float('-inf')
             beta = float('inf')
             
-            # Generate possible moves
+            # Generate and ORDER moves (Combat actions first for faster pruning)
             possible_moves = self._generate_moves(game_state, is_boss=True)
+            # Order: (SHOOT=True moves first, then moves towards player)
+            possible_moves.sort(key=lambda m: (m[1], self._is_towards_player(m[0])), reverse=True)
             
             for move in possible_moves:
                 # Simulate move (this will modify tank positions temporarily)
@@ -101,22 +105,15 @@ class BossAIEngine:
             self.boss_tank.x, self.boss_tank.y = orig_boss_x, orig_boss_y
             game_state.player.x, game_state.player.y = orig_player_x, orig_player_y
 
-    def _minimax(self, game_state, depth, alpha, beta, is_maximizing):
+    def _minimax(self, game_state, depth, alpha, beta, is_maximizing, use_pruning=True):
         """
-        Minimax algorithm with alpha-beta pruning.
-        
-        Args:
-            game_state: Current game state
-            depth: Remaining search depth
-            alpha: Best score for maximizer
-            beta: Best score for minimizer
-            is_maximizing: True if maximizing (boss's turn), False if minimizing (player's turn)
-        
-        Returns:
-            Evaluation score of current position
+        Minimax algorithm with optional alpha-beta pruning.
         """
-        self.nodes_explored += 1
-        
+        if use_pruning:
+            self.nodes_pruned += 1
+        else:
+            self.nodes_standard += 1
+            
         # Terminal node or depth limit
         if depth == 0 or self._is_terminal(game_state):
             return self._evaluate(game_state)
@@ -128,13 +125,14 @@ class BossAIEngine:
             
             for move in moves:
                 new_state = self._simulate_move(game_state, move, is_boss=True)
-                eval_score = self._minimax(new_state, depth - 1, alpha, beta, is_maximizing=False)
+                eval_score = self._minimax(new_state, depth - 1, alpha, beta, is_maximizing=False, use_pruning=use_pruning)
                 max_eval = max(max_eval, eval_score)
                 
-                alpha = max(alpha, eval_score)
-                if beta <= alpha:
-                    self.cutoffs += 1
-                    break  # Alpha cutoff
+                if use_pruning:
+                    alpha = max(alpha, eval_score)
+                    if beta <= alpha:
+                        self.cutoffs += 1
+                        break  # Alpha cutoff
             
             return max_eval
         else:
@@ -144,13 +142,14 @@ class BossAIEngine:
             
             for move in moves:
                 new_state = self._simulate_move(game_state, move, is_boss=False)
-                eval_score = self._minimax(new_state, depth - 1, alpha, beta, is_maximizing=True)
+                eval_score = self._minimax(new_state, depth - 1, alpha, beta, is_maximizing=True, use_pruning=use_pruning)
                 min_eval = min(min_eval, eval_score)
                 
-                beta = min(beta, eval_score)
-                if beta <= alpha:
-                    self.cutoffs += 1
-                    break  # Beta cutoff
+                if use_pruning:
+                    beta = min(beta, eval_score)
+                    if beta <= alpha:
+                        self.cutoffs += 1
+                        break  # Beta cutoff
             
             return min_eval
 
@@ -212,6 +211,23 @@ class BossAIEngine:
         if player_terrain == TERRAIN['FOREST']:
             score -= 20
         
+        # Factor 7: Facing player (+40) — proactive combat
+        dx, dy = self.boss_tank.direction
+        is_facing = False
+        if dx > 0 and player.x > self.boss_tank.x and player.y == self.boss_tank.y: is_facing = True
+        elif dx < 0 and player.x < self.boss_tank.x and player.y == self.boss_tank.y: is_facing = True
+        elif dy > 0 and player.y > self.boss_tank.y and player.x == self.boss_tank.x: is_facing = True
+        elif dy < 0 and player.y < self.boss_tank.y and player.x == self.boss_tank.x: is_facing = True
+        
+        if is_facing:
+            score += 100  # Directional awareness
+            if self.boss_tank.ready_to_shoot():
+                score += 150  # URGENCY: Buffed from 70 to 150 to ensure immediate attack
+        
+        # Factor 8: Predictive Intercept (reward being on same axis as player)
+        if self.boss_tank.x == player.x or self.boss_tank.y == player.y:
+            score += 40
+        
         return max(-1000, min(1000, score))
 
     def _generate_moves(self, game_state, is_boss):
@@ -242,15 +258,10 @@ class BossAIEngine:
         directions = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'NONE']
         
         for direction in directions:
-            # Can this tank move in this direction?
-            if direction == 'NONE':
-                moves.append((direction, False))
-                moves.append((direction, True))  # Shoot while idle
-            else:
-                # Check if move is valid
-                if self._can_move(tank, direction, game_state):
-                    moves.append((direction, False))
-                    moves.append((direction, True))  # Move + shoot
+            # Boss can ALWAYS rotate to a direction, even if movement is blocked
+            # This allows it to pivot and shoot at the player (essential for AI awareness)
+            moves.append((direction, False))
+            moves.append((direction, True))  # Rotate + shoot
         
         return moves
 
@@ -353,6 +364,20 @@ class BossAIEngine:
                 return True
         return False
 
+    def _is_towards_player(self, direction):
+        """Helper for move ordering: returns True if move is toward player."""
+        if direction == 'NONE' or not self.player_pos:
+            return False
+        
+        from config import DIRECTIONS
+        dx, dy = DIRECTIONS[direction]
+        target_x, target_y = self.boss_tank.x + dx, self.boss_tank.y + dy
+        
+        old_dist = abs(self.boss_tank.x - self.player_pos[0]) + abs(self.boss_tank.y - self.player_pos[1])
+        new_dist = abs(target_x - self.player_pos[0]) + abs(target_y - self.player_pos[1])
+        
+        return new_dist < old_dist
+
     def _is_enclosed(self, tank):
         """Check if tank is enclosed (surrounded by walls/tanks)."""
         from config import DIRECTIONS
@@ -378,7 +403,7 @@ class BossAgent:
         self.tank = tank
         self.grid = grid
         self.eagle_pos = eagle_pos or (12, 24)
-        self.ai_engine = BossAIEngine(tank, grid, depth=4)
+        self.ai_engine = BossAIEngine(tank, grid, depth=2)  # Phase 1: depth 2 (PDF spec)
         self.phase = 1  # 1, 2, or 3
         self.last_phase_update = 0.0
     
@@ -389,7 +414,6 @@ class BossAgent:
         Strategy split (per PDF spec):
         - MOVEMENT: Decided by Minimax (strategic repositioning)
         - SHOOTING: Decided by reactive reflex — shoot whenever player is in LOS.
-                    In Phase 3 (Desperate), also shoot randomly for unpredictability.
         
         Args:
             dt: Delta time
@@ -401,13 +425,37 @@ class BossAgent:
             self._update_phase()
             self.last_phase_update = 0.0
         
-        # --- MOVEMENT: use Minimax to decide best direction ---
-        direction, _ = self.ai_engine.decide(game_state)
-        self.tank.set_direction(direction)
+        # PERFORMANCE: Decision cycle buffed to 0.05s for "Twitch" reactions
+        self.decision_timer = getattr(self, 'decision_timer', 0.0) + dt
+        if self.decision_timer < 0.05:
+            # Continue current direction but still check reactive shooting
+            self._check_shooting(game_state)
+            return
         
-        # --- SHOOTING: reactive reflex (separate from minimax) ---
+        self.decision_timer = 0.0
+        
+        # --- COMBINED DECISION: use Minimax for both movement and shooting ---
+        # This fixes the "only shooting down" glitch by following the search results
+        move_result = self.ai_engine.decide(game_state)
+        
+        if move_result:
+            direction, should_shoot = move_result
+            
+            # Apply movement
+            if direction != 'NONE':
+                self.tank.set_direction(direction)
+            
+            # Apply shooting (Minimax's strategic choice)
+            if should_shoot and self.tank.ready_to_shoot():
+                self.tank.shoot()
+            
+        # --- REACTIVE BACKUP: Always shoot if player is in LOS (Reflex) ---
+        self._check_shooting(game_state)
+
+    def _check_shooting(self, game_state):
+        """Standard shooting logic for Boss."""
         if not self.tank.ready_to_shoot():
-            return  # Still on fire cooldown
+            return
         
         player = game_state.player
         if not player or not player.alive:
@@ -419,33 +467,47 @@ class BossAgent:
             return
         
         # Phase 3 (Desperate): also shoot randomly even without LOS
-        # "Unpredictable rush — ignore self-preservation"
         if self.phase == 3:
             import random
-            if random.random() < 0.4:  # 40% chance per decision cycle
+            if random.random() < 0.2:
                 self.tank.shoot()
     
     def _update_phase(self):
-        """Update boss phase based on current HP. Phases only advance forward (1→2→3)."""
+        """Update boss stats based on current HP (PDF spec Page 9 & 12).
+        
+        Always applies the correct stats for the current HP level.
+        Phase transitions are one-way (1→2→3, never backwards).
+        """
         old_phase = self.phase
         
-        # Determine what phase this HP level corresponds to
+        # Determine phase and stats from current HP
         if self.tank.hp >= 7:
             new_phase = 1
             new_depth = 2
+            new_speed = 1.5   # Phase 1: Slow
+            new_fire = 2.0    # Phase 1: 1 bullet per 2s
         elif self.tank.hp >= 3:
             new_phase = 2
             new_depth = 3
+            new_speed = 2.5   # Phase 2: Medium
+            new_fire = 1.5    # Phase 2: 1 bullet per 1.5s
         else:
             new_phase = 3
             new_depth = 4
+            new_speed = 3.5   # Phase 3: Fast
+            new_fire = 0.8    # Phase 3: 1 bullet per 0.8s
         
-        # Phases ONLY advance (1→2→3) — never retreat due to HP regeneration
-        # If regen heals boss from 2→3 HP, it stays in Phase 3, not Phase 2
-        self.phase = max(old_phase, new_phase)
+        # Phases only advance (1→2→3), never retreat
+        new_phase = max(old_phase, new_phase)
+        
+        # ALWAYS apply stats (fixes the "frozen boss" bug where phase 1→1 was skipped)
+        self.phase = new_phase
+        self.tank.phase = new_phase  # Sync for HUD display
         self.ai_engine.max_depth = new_depth
+        self.tank.speed = new_speed
+        self.tank.fire_rate = new_fire
         
-        if old_phase != self.phase:
-            phase_names = {1: 'AGGRESSIVE', 2: 'TACTICAL', 3: 'DESPERATE'}
-            print(f"Boss entering Phase {self.phase} - {phase_names[self.phase]} MODE!")
+        if new_phase != old_phase:
+            p_names = {1: "AGGRESSIVE", 2: "TACTICAL", 3: "DESPERATE"}
+            print(f"Boss entering Phase {new_phase} - {p_names.get(new_phase)} MODE! (Depth {new_depth})")
 

@@ -11,6 +11,7 @@ except ImportError:
     PYGAME_AVAILABLE = False
 
 import sys
+import os
 sys.path.insert(0, 'src')
 
 from config import GRID_WIDTH, GRID_HEIGHT, TILE_SIZE
@@ -27,15 +28,32 @@ class MainMenu:
         pygame.init()
         self.WIDTH = GRID_WIDTH * TILE_SIZE
         self.HEIGHT = GRID_HEIGHT * TILE_SIZE
+        print(f"DEBUG: Pygame initialized. Screen size: {self.WIDTH}x{self.HEIGHT}")
         self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
+        print("DEBUG: Window created successfully.")
         pygame.display.set_caption("Battle City - Level Select")
         self.clock = pygame.time.Clock()
         self.selected = 0
         self.levels = [
-            {'name': 'Level 1: Brick Maze', 'value': 1, 'desc': 'Intro: BFS pathfinding, dynamic map changes'},
-            {'name': 'Level 2: Steel Fortress', 'value': 2, 'desc': 'Challenge: A* with cost-awareness'},
-            {'name': 'Level 3: BOSS Battle', 'value': 'BOSS', 'desc': 'Advanced: Minimax adversarial search'}
+            {'name': 'Level 1: Brick Maze', 'value': 1, 'desc': 'Intro: BFS pathfinding, dynamic map changes', 'icon': 'tank_basic'},
+            {'name': 'Level 2: Steel Fortress', 'value': 2, 'desc': 'Challenge: A* with cost-awareness', 'icon': 'tank_armor'},
+            {'name': 'Level 3: BOSS Battle', 'value': 'BOSS', 'desc': 'Advanced: Minimax adversarial search', 'icon': 'tank_boss'}
         ]
+        self._load_menu_assets()
+
+    def _load_menu_assets(self):
+        """Load sprites for menu icons."""
+        self.icons = {}
+        asset_dir = os.path.join(os.path.dirname(__file__), 'assets')
+        if not os.path.exists(asset_dir):
+            return
+            
+        for level in self.levels:
+            icon_name = level['icon']
+            path = os.path.join(asset_dir, f"{icon_name}.png")
+            if os.path.exists(path):
+                surf = pygame.image.load(path).convert_alpha()
+                self.icons[icon_name] = pygame.transform.scale(surf, (60, 60))
     
     def handle_input(self):
         """Handle menu input."""
@@ -80,13 +98,18 @@ class MainMenu:
             else:
                 color = (200, 200, 200)
             
+            # Level icon
+            icon = self.icons.get(level['icon'])
+            if icon:
+                self.screen.blit(icon, (80, y_offset - 5))
+            
             # Level name
-            text = option_font.render(f"{'→ ' if i == self.selected else '  '}{level['name']}", True, color)
-            self.screen.blit(text, (80, y_offset))
+            text = option_font.render(level['name'], True, color)
+            self.screen.blit(text, (160, y_offset))
             
             # Description
             desc_text = desc_font.render(level['desc'], True, (150, 150, 150))
-            self.screen.blit(desc_text, (120, y_offset + 35))
+            self.screen.blit(desc_text, (160, y_offset + 35))
             
             y_offset += 100
         
@@ -120,25 +143,31 @@ def main():
     pygame.init()
     
     try:
+        print("DEBUG: Starting main loop...")
         while True:
             menu = MainMenu()
+            print("DEBUG: Running menu...")
             level = menu.run()
-            menu.screen = None  # Clear the screen
             
             if level is None:
-                print("Exiting Battle City...")
+                print("DEBUG: Menu returned None (Quit). Exiting...")
                 break
             
             # Import game after menu selection
             from main import BattleCityGame
             
-            print(f"\nStarting Level {level}...")
+            print(f"\nDEBUG: Starting Level {level}...")
             game = BattleCityGame(level)
             game.run()
             
             # After game ends, show menu again
-            print("\nReturning to menu...\n")
+            print("\nDEBUG: Returning to menu...\n")
     
+    except Exception as e:
+        print(f"CRITICAL ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        input("Press Enter to close...")
     finally:
         pygame.quit()
         sys.exit(0)

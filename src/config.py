@@ -6,7 +6,7 @@ AL2002 Artificial Intelligence Lab | Spring 2026
 # ============ GRID & MAP SYSTEM ============
 GRID_WIDTH = 26
 GRID_HEIGHT = 26
-TILE_SIZE = 30  # pixels (for rendering)
+TILE_SIZE = 26  # Adjusted for vertical fit (fits comfortably on all screens)
 
 # ============ TERRAIN TYPES ============
 TERRAIN = {
@@ -22,44 +22,49 @@ TERRAIN = {
 TANK_TYPES = {
     'BASIC': {
         'hp': 1,
-        'speed': 0.25,        # 1 tile per 4 ticks (0.25 tiles/sec) - Slowest
-        'fire_rate': 3.0,     # 1 bullet per 3 seconds
+        'speed': 1.2,         # Slowed (Original 1.5)
+        'fire_rate': 3.0,     # 1 bullet per 3 seconds (spec)
         'color': (50, 200, 50),
         'ai_type': 'simple_reflex'
     },
     'FAST': {
         'hp': 1,
-        'speed': 0.5,         # 1 tile per 2 ticks (0.5 tiles/sec) - 2x Basic
-        'fire_rate': 1.5,     # 1 bullet per 1.5 seconds - More frequent than Basic
+        'speed': 2.5,         # Slowed (Original 3.0)
+        'fire_rate': 1.5,     # 1 bullet per 1.5 seconds (spec)
         'color': (255, 165, 0),
         'ai_type': 'goal_based'
     },
     'ARMOR': {
         'hp': 4,
-        'speed': 0.33,        # 1 tile per 3 ticks (0.33 tiles/sec) - Medium
-        'fire_rate': 2.0,     # 1 bullet per 2 seconds
+        'speed': 1.0,         # PDF Page 8: "1/3 speed of Fast"
+        'fire_rate': 2.0,
         'color': (200, 100, 50),
         'ai_type': 'model_based_reflex'
     },
+    'POWER': {
+        'hp': 1,
+        'speed': 2.0,         # Slowed (Original 2.5)
+        'fire_rate': 1.0,     # Fast firing
+        'color': (255, 50, 255), # Magenta/Purple for Power tanks
+        'ai_type': 'utility_based'
+    },
     'BOSS': {
         'hp': 10,
-        'speed': 0.2,         # Varies by phase (Phase 1: slow, Phase 2: medium, Phase 3: fast)
-        'fire_rate': 2.0,     # Varies by phase (Phase 1: 2.0s, Phase 2: 1.5s, Phase 3: 0.8s)
+        'speed': 2.0,
+        'fire_rate': 1.5,
         'color': (200, 0, 0),
         'ai_type': 'adversarial'
     }
 }
 
 # ============ BULLET PROPERTIES ============
-BULLET_SPEED = 10.0  # Tiles per second (fast and visible)
+BULLET_SPEED = 6.0  # 2x Fast tank speed (spec)
 
 # ============ SPAWN SYSTEM ============
 SPAWN_POINTS = [
     (0, 0),      # Top-left
     (12, 0),     # Top-center
     (24, 0),     # Top-right
-    (0, 12),     # Mid-left
-    (24, 12),    # Mid-right
 ]
 PLAYER_SPAWN = (4, 24)
 EAGLE_POSITION = (12, 24)
@@ -97,7 +102,7 @@ LEVEL_CONFIG = {
     1: {
         'name': 'Brick Maze',
         'enemy_pool': {'BASIC': 7, 'FAST': 5},
-        'max_active': 3,
+        'max_active': 3, # Adjusted to match PDF Page 5
         'brick_density': 0.35,
         'steel_density': 0.10,
         'forest_density': 0.15,
@@ -106,8 +111,8 @@ LEVEL_CONFIG = {
     },
     2: {
         'name': 'Steel Fortress',
-        'enemy_pool': {'FAST': 4, 'ARMOR': 3},
-        'max_active': 3,
+        'enemy_pool': {'FAST': 4, 'ARMOR': 3, 'POWER': 2}, # Exact pool from PDF Page 5
+        'max_active': 3, # Adjusted to match PDF Page 5
         'brick_density': 0.25,
         'steel_density': 0.20,
         'forest_density': 0.10,
