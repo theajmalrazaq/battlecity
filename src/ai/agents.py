@@ -448,7 +448,7 @@ class AIAgentFactory:
         Args:
             tank: Tank object
             grid: Grid object
-            tank_type: 'BASIC', 'FAST', 'ARMOR' (defaults to tank.tank_type)
+            tank_type: 'BASIC', 'FAST', 'ARMOR', 'BOSS' (defaults to tank.tank_type)
             eagle_pos: Position of eagle (default 12, 24)
         
         Returns:
@@ -465,5 +465,8 @@ class AIAgentFactory:
             return GoalBasedAgent(tank, grid, eagle_pos)
         elif tank_type == 'ARMOR':
             return ModelBasedReflexAgent(tank, grid, eagle_pos)
+        elif tank_type == 'BOSS':
+            from .boss import BossAgent
+            return BossAgent(tank, grid, eagle_pos)
         else:
             return SimpleReflexAgent(tank, grid, eagle_pos)  # Default

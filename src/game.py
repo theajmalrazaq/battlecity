@@ -10,8 +10,9 @@ from config import (
     PLAYER_LIVES, MAX_ACTIVE_TANKS, SPAWN_DELAY, LEVEL_ENEMY_POOL,
     FPS, SPAWN_FAIRNESS_DISTANCE
 )
+import random
 from grid import Grid
-from tank import Tank, TankType
+from tank import Tank, TankType, BossTank
 from bullet import BulletManager
 from collision import CollisionDetector
 from map_generator import LevelGenerator
@@ -66,6 +67,13 @@ class GameState:
             # Set enemy pool
             self.enemy_pool = level_data['enemy_pool'][:]
         
+        # Game time
+        self.elapsed_time = 0.0
+        self.tick_count = 0
+        
+        # Events log (for debugging/replay)
+        self.events = []
+        
         # Player
         self.player = None
         self.player_lives = PLAYER_LIVES
@@ -75,12 +83,15 @@ class GameState:
         self.enemies_defeated = 0
         self.last_spawn_time = 0.0
         
-        # Game time
-        self.elapsed_time = 0.0
-        self.tick_count = 0
+        # Spawn boss immediately if boss level (before player so boss is at correct location)
+        if self.level == 'BOSS' and self.enemy_pool:
+            boss_type = self.enemy_pool.pop(0)
+            # Pre-spawn boss at (13, 7) before player, so player doesn't collide
+            self.active_enemies = 0  # Reset counter before spawning
+            boss = self.spawn_enemy(boss_type)  # Spawn boss at (13, 7)
         
-        # Events log (for debugging/replay)
-        self.events = []
+        # Now spawn player (will be at 13, 18 for boss level, which is clear)
+        self.spawn_player()  # Spawn player at start
 
     def add_event(self, event_type, data):
         """Log a game event."""
@@ -96,13 +107,28 @@ class GameState:
         Spawn the player tank.
         
         Args:
-            x, y: Position (defaults to PLAYER_SPAWN)
+            x, y: Position (defaults to PLAYER_SPAWN, or top-left corner for BOSS level)
         """
         if x is None:
-            x, y = PLAYER_SPAWN
+            if self.level == 'BOSS':
+                # Boss level: spawn at top-left corner outside the arena (safe spawn zone)
+                # Arena is at (7-18, 7-18), so (0,0) is far away and safe
+                x, y = 0, 0
+            else:
+                x, y = PLAYER_SPAWN
+        
+        # Only create new player if we don't have one, or clear the old one
+        if self.player and self.player.alive:
+            self.player.alive = False  # Mark old player as dead
         
         self.player = Tank(TankType.PLAYER, x, y, is_player=True)
-        self.tanks.append(self.player)
+        
+        # Remove dead players from tanks list before adding new one
+        self.tanks = [t for t in self.tanks if t.alive or t == self.player]
+        
+        if self.player not in self.tanks:
+            self.tanks.append(self.player)
+        
         self.add_event('player_spawned', {'pos': (x, y)})
 
     def spawn_enemy(self, tank_type, x=None, y=None):
@@ -116,19 +142,30 @@ class GameState:
         Returns:
             Tank object if spawned, None if fairness constraint violated
         """
-        if x is None:
-            # Choose a spawn point
-            spawn_idx = self.enemies_defeated % len(SPAWN_POINTS)
-            x, y = SPAWN_POINTS[spawn_idx]
+        tank_type_str = tank_type.value if isinstance(tank_type, TankType) else tank_type
         
-        # Check fairness constraint: no spawn within 10 tiles of player
-        if self.player:
+        # Special handling for BOSS level
+        if self.level == 'BOSS' and tank_type_str == 'BOSS':
+            # Boss spawns at center-top of arena (13, 7)
+            x, y = 13, 7
+        elif x is None:
+            # Choose a random spawn point for variety (not predictable cycling)
+            spawn_point = random.choice(SPAWN_POINTS)
+            x, y = spawn_point
+        
+        # Check fairness constraint: no spawn within 5 tiles of player
+        if self.player and self.level != 'BOSS':  # Skip fairness check for boss battle
             dist = abs(x - self.player.x) + abs(y - self.player.y)
             if dist < SPAWN_FAIRNESS_DISTANCE:
                 return None  # Spawn blocked by fairness constraint
         
-        # Spawn the tank
-        tank = Tank(tank_type, x, y, is_player=False)
+        # Spawn the tank (special handling for BOSS)
+        if tank_type_str == 'BOSS':
+            # Phase 3B: Create BossTank for boss level
+            tank = BossTank(x, y)
+        else:
+            tank = Tank(tank_type, x, y, is_player=False)
+        
         self.tanks.append(tank)
         self.active_enemies += 1
         
@@ -203,13 +240,8 @@ class GameState:
         self.tick_count += 1
         self.elapsed_time += dt
         
-        # STEP 1: INPUT - Player keyboard input (with direction change reset for responsiveness)
+        # STEP 1: INPUT - Player keyboard input
         if input_state:
-            # Reset movement progress if direction changed (makes controls feel responsive)
-            new_direction = input_state.get('direction', 'NONE')
-            if self.player and new_direction != self.player.direction_name:
-                self.player.move_progress = 0.0
-            
             # Update direction and shooting
             self.update_player_input(input_state)
         
@@ -221,29 +253,62 @@ class GameState:
                     agent = self.ai_agents[tank]
                     agent.decide(dt, self)
         
-        # STEP 3: MOVE - All tanks attempt to move (with speed-based fractional movement)
+        # STEP 3: MOVE - All tanks attempt to move
         for tank in self.tanks:
             if not tank.alive:
                 continue
             
             if tank.direction_name != 'NONE':
-                # Accumulate movement progress based on speed
-                # Speed is in tiles/second, dt is in seconds
-                tank.move_progress += tank.speed * dt
-                
-                # Check if we've accumulated enough progress for a full tile move
-                while tank.move_progress >= 1.0:
-                    next_x = tank.x + tank.direction[0]
-                    next_y = tank.y + tank.direction[1]
+                # Player: move 1 tile per keypress with cooldown for controlled navigation
+                if tank.is_player:
+                    if tank.move_cooldown <= 0.0:
+                        next_x = tank.x + tank.direction[0]
+                        next_y = tank.y + tank.direction[1]
+                        
+                        if self.collision_detector.can_tank_move_to(tank, next_x, next_y):
+                            tank.x = next_x
+                            tank.y = next_y
+                            tank.move_cooldown = 0.15  # 150ms cooldown between moves
+                else:
+                    # Enemies: use time-based movement (speed-based)
+                    tank.move_progress += tank.speed * dt
                     
-                    if self.collision_detector.can_tank_move_to(tank, next_x, next_y):
-                        tank.x = next_x
-                        tank.y = next_y
-                        tank.move_progress -= 1.0
+                    # Check if we've accumulated enough progress for a full tile move
+                    while tank.move_progress >= 1.0:
+                        next_x = tank.x + tank.direction[0]
+                        next_y = tank.y + tank.direction[1]
+                        
+                        if self.collision_detector.can_tank_move_to(tank, next_x, next_y):
+                            tank.x = next_x
+                            tank.y = next_y
+                            tank.move_progress -= 1.0
+                        else:
+                            # Blocked - don't move, but keep accumulated progress
+                            # Next frame when path clears, we can continue immediately
+                            break
+        
+        # Check for enemy collision with player (damage)
+        if self.player and self.player.alive:
+            for tank in self.tanks:
+                if tank.alive and not tank.is_player and tank.x == self.player.x and tank.y == self.player.y:
+                    # Enemy collided with player - damage player
+                    self.player.take_damage(1)
+        
+        # Check for tank reaching eagle (game over)
+        for tank in self.tanks:
+            if tank.alive:
+                terrain_at_tank = self.grid.get_terrain(int(tank.x), int(tank.y))
+                if terrain_at_tank == TERRAIN['EAGLE']:
+                    # Tank reached eagle - game over
+                    if tank.is_player:
+                        # Player reached enemy eagle - WIN!
+                        self.phase = GamePhase.LEVEL_WIN
+                        self.add_event('game_over', {'reason': 'player_reached_eagle'})
                     else:
-                        # Blocked - don't move, but keep accumulated progress
-                        # Next frame when path clears, we can continue immediately
-                        break
+                        # Enemy reached player eagle - LOSE!
+                        self.phase = GamePhase.GAME_OVER
+                        self.add_event('game_over', {'reason': 'eagle_destroyed'})
+                    break
         
         # STEP 4: SHOOT - All tanks that chose to shoot fire a bullet
         for tank in self.tanks:
@@ -280,6 +345,9 @@ class GameState:
         # Remove dead tanks
         dead_tanks = [t for t in self.tanks if not t.alive]
         self.tanks = [t for t in self.tanks if t.alive]
+        
+        # Update collision detector's reference to tanks list
+        self.collision_detector.tanks = self.tanks
         
         # Clean up AI agents for dead tanks
         for tank in dead_tanks:
@@ -336,6 +404,26 @@ class GameState:
             'time': self.elapsed_time,
             'ticks': self.tick_count
         }
+
+    def get_end_reason(self):
+        """Get human-readable reason for game end."""
+        if self.phase == GamePhase.LEVEL_WIN:
+            return "Level Complete!"
+        elif self.phase == GamePhase.GAME_OVER:
+            # Check why it ended
+            if self.player_lives <= 0:
+                return "Out of Lives!"
+            else:
+                # Find the last event that ended the game
+                for event in reversed(self.events):
+                    if event['type'] == 'game_over':
+                        reason = event['data'].get('reason', 'Unknown')
+                        if reason == 'eagle_destroyed':
+                            return "Eagle Destroyed!"
+                        elif reason == 'out_of_lives':
+                            return "Out of Lives!"
+                return "Game Over!"
+        return "Game Over!"
 
     def __repr__(self):
         return f"GameState(Level {self.level}, Phase={self.phase.value}, Time={self.elapsed_time:.1f}s)"

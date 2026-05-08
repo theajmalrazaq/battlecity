@@ -60,9 +60,9 @@ class Bullet:
         Returns:
             Current position as (tile_x, tile_y) integers
         """
-        # Move by speed amount
-        self.x += self.dx * self.speed
-        self.y += self.dy * self.speed
+        # Move by speed amount * delta time
+        self.x += self.dx * self.speed * dt
+        self.y += self.dy * self.speed * dt
         
         # Return current tile position
         return (int(self.x), int(self.y))
@@ -104,13 +104,14 @@ class BulletManager:
         Returns:
             Bullet object, or None if tank can't shoot
         """
-        if not tank.ready_to_shoot():
-            return None
-        
-        # Create bullet at tank's position, facing tank's direction
-        bullet = Bullet(tank.x, tank.y, tank.direction, tank)
+        # Create bullet slightly ahead of tank's position for better visibility
+        # Note: tank.shoot() already called in update_player_input(),
+        # has_bullet flag signals that a bullet should be spawned this tick
+        spawn_x = tank.x + tank.direction[0] * 0.5
+        spawn_y = tank.y + tank.direction[1] * 0.5
+        bullet = Bullet(spawn_x, spawn_y, tank.direction, tank)
         self.bullets.append(bullet)
-        tank.shoot()  # Mark tank as having fired
+        tank.reset_shot()  # Reset has_bullet flag after creating bullet
         return bullet
 
     def update_bullets(self, dt):
