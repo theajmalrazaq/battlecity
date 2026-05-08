@@ -83,7 +83,7 @@ class CollisionDetector:
         elif terrain == TERRAIN['STEEL']:
             return 'steel'
         elif terrain == TERRAIN['WATER']:
-            return 'water'
+            return None  # Bullets pass OVER water (tanks blocked, bullets fly through)
         elif terrain == TERRAIN['EAGLE']:
             return 'eagle'
         
@@ -208,11 +208,12 @@ class CollisionDetector:
             target = event['target']
             
             if target == 'brick':
-                # Destroy brick, bullet continues (passes through)
+                # Destroy brick AND bullet (original Battle City rules)
                 bx, by = event['position']
                 self.grid.destroy_brick(bx, by)
+                self.bullets.destroy_bullet(bullet)
                 result['destroyed_brick'] = True
-                result['destroyed_bullet'] = False
+                result['destroyed_bullet'] = True
             else:
                 # Steel, water, bounds - destroy bullet
                 self.bullets.destroy_bullet(bullet)

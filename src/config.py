@@ -63,11 +63,11 @@ SPAWN_POINTS = [
 ]
 PLAYER_SPAWN = (4, 24)
 EAGLE_POSITION = (12, 24)
-SPAWN_FAIRNESS_DISTANCE = 5  # Manhattan distance (reduced from 10)
+SPAWN_FAIRNESS_DISTANCE = 10  # Manhattan distance (spec: no spawn within 10 tiles of player)
 
 # ============ GAME RULES ============
-PLAYER_LIVES = 5
-MAX_ACTIVE_TANKS = 3
+PLAYER_LIVES = 10
+MAX_ACTIVE_TANKS = 4
 SPAWN_DELAY = 0.5  # seconds between spawns (faster spawning)
 LEVEL_ENEMY_POOL = 20  # Total enemies per level
 

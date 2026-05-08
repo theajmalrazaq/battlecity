@@ -124,6 +124,11 @@ class BulletManager:
         for bullet in self.bullets[:]:  # Iterate over copy
             if bullet.alive:
                 bullet.update(dt)
+                # Destroy bullets that fly out of bounds
+                bx, by = int(bullet.x), int(bullet.y)
+                if bx < 0 or bx >= 26 or by < 0 or by >= 26:
+                    bullet.destroy()
+                    self.bullets.remove(bullet)
             else:
                 self.bullets.remove(bullet)
 

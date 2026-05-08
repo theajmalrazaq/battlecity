@@ -43,10 +43,10 @@ class Tank:
         # Get tank properties from config
         type_name = self.tank_type.value
         if type_name == 'PLAYER':
-            props = TANK_TYPES['FAST']  # Player uses FAST stats (2.0 tiles/sec) for responsive controls
-            # Override color for player tank - make it light gray
+            props = TANK_TYPES['FAST']  # Player uses FAST stats (speed) for responsive controls
             props = props.copy()
-            props['color'] = (200, 200, 200)  # Light gray/white for player
+            props['color'] = (200, 200, 200)   # Light gray/white for player
+            props['fire_rate'] = 0.8            # Faster fire rate than enemies (0.8s vs 1.5s)
         else:
             props = TANK_TYPES[type_name]
         
@@ -81,12 +81,17 @@ class Tank:
         self.color = props['color']
         self.sprite = None
         
+        # Hit flash (GAP 14 - PDF: Armor tank flashes on each hit to show damage stage)
+        self.hit_flash_timer = 0.0  # Counts down from 0.3s after each hit
+        
         # Alive flag
         self.alive = True
 
     def take_damage(self, amount=1):
         """Reduce HP by amount. Returns True if tank is destroyed."""
         self.hp -= amount
+        # Trigger hit-flash visual (rendering layer reads hit_flash_timer > 0 to draw white)
+        self.hit_flash_timer = 0.3
         if self.hp <= 0:
             self.alive = False
             return True
@@ -162,6 +167,10 @@ class Tank:
         # Update movement cooldown (for player)
         if self.move_cooldown > 0.0:
             self.move_cooldown -= dt
+        
+        # Decay hit-flash visual timer (GAP 14 - flash on hit)
+        if self.hit_flash_timer > 0.0:
+            self.hit_flash_timer -= dt
 
     def __repr__(self):
         return f"Tank({self.tank_type.value} at ({self.x}, {self.y}), HP={self.hp}/{self.max_hp})"

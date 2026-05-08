@@ -58,6 +58,8 @@ class GameState:
         if level_data is None:
             print(f"ERROR: Failed to generate level {level}")
             self.enemy_pool = []
+            # Prevent instant win from empty pool — mark as game over with error
+            self.phase = GamePhase.GAME_OVER
         else:
             # Load generated map into grid
             for y in range(len(level_data['map'])):
@@ -82,6 +84,7 @@ class GameState:
         self.active_enemies = 0
         self.enemies_defeated = 0
         self.last_spawn_time = 0.0
+        self._player_contact_set = set()  # Tracks enemies currently touching player (BUG 6 fix)
         
         # Spawn boss immediately if boss level (before player so boss is at correct location)
         if self.level == 'BOSS' and self.enemy_pool:
@@ -92,6 +95,9 @@ class GameState:
         
         # Now spawn player (will be at 13, 18 for boss level, which is clear)
         self.spawn_player()  # Spawn player at start
+        # spawn_player() reassigns self.tanks (list comprehension at line 128)
+        # → collision_detector.tanks still points to the old list → sync it now
+        self.collision_detector.tanks = self.tanks
 
     def add_event(self, event_type, data):
         """Log a game event."""
@@ -111,9 +117,9 @@ class GameState:
         """
         if x is None:
             if self.level == 'BOSS':
-                # Boss level: spawn at top-left corner outside the arena (safe spawn zone)
-                # Arena is at (7-18, 7-18), so (0,0) is far away and safe
-                x, y = 0, 0
+                # Boss arena is at x:7-18, y:7-18 (12x12 centered in 26x26 grid).
+                # Player spawns at the bottom of the arena facing the boss at the top.
+                x, y = 13, 18
             else:
                 x, y = PLAYER_SPAWN
         
@@ -195,6 +201,13 @@ class GameState:
         self.last_spawn_time += dt
         if self.last_spawn_time >= SPAWN_DELAY:
             self.last_spawn_time = 0.0
+            
+            # Level 1 kill-gating: Fast tanks only spawn after 10 kills (PDF §Level 1)
+            # "First 7 kills are Basic Tanks. Final 5 Fast Tanks spawn after 10 kills."
+            next_type = self.enemy_pool[0]
+            next_type_str = next_type.value if hasattr(next_type, 'value') else str(next_type)
+            if self.level == 1 and next_type_str == 'FAST' and self.enemies_defeated < 10:
+                return  # Hold Fast tanks until 10 enemies have been defeated
             
             # Spawn next enemy from pool
             tank_type = self.enemy_pool.pop(0)
@@ -287,27 +300,30 @@ class GameState:
                             # Next frame when path clears, we can continue immediately
                             break
         
-        # Check for enemy collision with player (damage)
+        # Check for enemy collision with player (damage — only on ENTRY, not every frame)
+        # BUG 6 fix: without this, an enemy standing on the player deals 60 HP/sec
         if self.player and self.player.alive:
+            currently_touching = set()
             for tank in self.tanks:
-                if tank.alive and not tank.is_player and tank.x == self.player.x and tank.y == self.player.y:
-                    # Enemy collided with player - damage player
-                    self.player.take_damage(1)
+                if tank.alive and not tank.is_player:
+                    if tank.x == self.player.x and tank.y == self.player.y:
+                        currently_touching.add(id(tank))
+                        if id(tank) not in self._player_contact_set:
+                            # New contact — apply damage once
+                            self.player.take_damage(1)
+            # Clear contacts that are no longer overlapping
+            self._player_contact_set = currently_touching
         
-        # Check for tank reaching eagle (game over)
+        # Check for enemy tank reaching the player's eagle (game over)
+        # Note: The eagle is the PLAYER'S base — only enemies reaching it matters.
+        #       The player standing on their own eagle tile does nothing.
         for tank in self.tanks:
-            if tank.alive:
+            if tank.alive and not tank.is_player:
                 terrain_at_tank = self.grid.get_terrain(int(tank.x), int(tank.y))
                 if terrain_at_tank == TERRAIN['EAGLE']:
-                    # Tank reached eagle - game over
-                    if tank.is_player:
-                        # Player reached enemy eagle - WIN!
-                        self.phase = GamePhase.LEVEL_WIN
-                        self.add_event('game_over', {'reason': 'player_reached_eagle'})
-                    else:
-                        # Enemy reached player eagle - LOSE!
-                        self.phase = GamePhase.GAME_OVER
-                        self.add_event('game_over', {'reason': 'eagle_destroyed'})
+                    # Enemy reached player's eagle — instant loss
+                    self.phase = GamePhase.GAME_OVER
+                    self.add_event('game_over', {'reason': 'eagle_destroyed'})
                     break
         
         # STEP 4: SHOOT - All tanks that chose to shoot fire a bullet
@@ -328,6 +344,14 @@ class GameState:
         for event in collision_events:
             result = self.collision_detector.resolve_collision(event)
             
+            # Notify all AI agents when a brick is destroyed (path re-planning)
+            if result.get('destroyed_brick'):
+                bx, by = event.get('position', (None, None))
+                if bx is not None:
+                    for agent in self.ai_agents.values():
+                        if hasattr(agent, 'on_wall_destroyed'):
+                            agent.on_wall_destroyed(bx, by)
+            
             # Track enemy defeats
             if result.get('tank_destroyed') and not event['target'].is_player:
                 self.enemies_defeated += 1
@@ -336,6 +360,13 @@ class GameState:
                     'type': event['target'].tank_type.value,
                     'count': self.enemies_defeated
                 })
+            
+            # Increment Armor tank hit_count when damaged (for retreat logic)
+            if result.get('tank_damaged') and not result.get('tank_destroyed'):
+                damaged_tank = result.get('damaged_tank')
+                if damaged_tank and not damaged_tank.is_player and hasattr(damaged_tank, 'ai_state'):
+                    if 'hit_count' in damaged_tank.ai_state:
+                        damaged_tank.ai_state['hit_count'] += 1
             
             # Check for eagle destruction
             if result.get('eagle_destroyed'):
@@ -371,7 +402,8 @@ class GameState:
         # STEP 9: RENDER - (Handled by UI/graphics layer, not here)
         
         # STEP 10: WIN/LOSE CHECK
-        if self.enemies_defeated >= LEVEL_ENEMY_POOL and not self.enemy_pool:
+        # Win when enemy pool is exhausted AND no active enemies remain
+        if not self.enemy_pool and self.active_enemies == 0:
             self.phase = GamePhase.LEVEL_WIN
             self.add_event('level_complete', {'level': self.level})
         

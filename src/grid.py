@@ -49,8 +49,9 @@ class Grid:
         if not self.is_valid(x, y):
             return False
         terrain = self.get_terrain(x, y)
-        # Bullets can pass through EMPTY, FOREST, and WATER
-        # Bullets are blocked by BRICK, STEEL, and EAGLE
+        # Bullets pass through EMPTY, FOREST, and WATER (bullets fly over water)
+        # Blocked by: BRICK (destroys it), STEEL, EAGLE
+        # Original Battle City rules: water stops tanks but NOT bullets
         return terrain in [TERRAIN['EMPTY'], TERRAIN['FOREST'], TERRAIN['WATER']]
 
     def is_solid(self, x, y):

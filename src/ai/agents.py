@@ -74,11 +74,16 @@ class SimpleReflexAgent(AIAgent):
         self.last_decision_time += dt
         self.last_bfs_time += dt
         
-        # Update BFS path periodically
+        # Invalidate path if any tile in current path is no longer passable (wall destroyed / new wall)
+        if self.current_path and self._path_blocked():
+            self.current_path = []
+            self.last_bfs_time = self.bfs_interval  # Force immediate recompute
+        
+        # Update BFS path periodically or when path is empty
         if self.last_bfs_time >= self.bfs_interval or not self.current_path:
             self.current_path = self.pathfinder.find_path(
                 self.tank.get_position(),
-                self.eagle_pos  # Use self.eagle_pos instead of game_state.grid.eagle_pos
+                self.eagle_pos
             )
             self.last_bfs_time = 0.0
         
@@ -101,6 +106,16 @@ class SimpleReflexAgent(AIAgent):
         else:
             # No path, move randomly
             self._move_random()
+
+    def on_wall_destroyed(self, x, y):
+        """
+        Called by game engine when any wall is destroyed.
+        If the destroyed tile was on our BFS path, invalidate and re-run immediately.
+        Per spec: 'Re-run BFS whenever a wall in the current path is destroyed.'
+        """
+        if self.current_path and (x, y) in self.current_path:
+            self.current_path = []
+            self.last_bfs_time = self.bfs_interval  # Force immediate recompute next tick
 
     def _can_see_and_shoot_player(self, player):
         """
@@ -128,6 +143,13 @@ class SimpleReflexAgent(AIAgent):
                     return False
             return True
         
+        return False
+
+    def _path_blocked(self):
+        """Check if any tile in current path is no longer passable (e.g., wall destroyed/added)."""
+        for pos in self.current_path[1:]:  # Skip current position
+            if not self.grid.is_passable_by_tank(pos[0], pos[1]):
+                return True
         return False
 
     def _move_toward(self, target):
@@ -294,12 +316,28 @@ class ModelBasedReflexAgent(AIAgent):
             # Rule 2 & 3: Retreat mode (3rd hit)
             self._retreat_mode(dt, game_state)
 
+    def _path_blocked(self):
+        """Check if any tile in current path is no longer passable."""
+        for pos in self.current_path[1:]:
+            if not self.grid.is_passable_by_tank(pos[0], pos[1]):
+                # Also allow brick tiles (A* can plan through them by shooting)
+                from config import TERRAIN
+                terrain = self.grid.get_terrain(pos[0], pos[1])
+                if terrain not in [TERRAIN['BRICK']]:  # Only hard-block on Steel/Water
+                    return True
+        return False
+
     def _attack_mode(self, dt, game_state):
         """
         Attack mode: Move toward eagle via A*, shoot if possible.
         """
         # Get eagle position from game state
         eagle_pos = game_state.grid.eagle_pos if hasattr(game_state.grid, 'eagle_pos') else (12, 24)
+        
+        # Invalidate path if a Steel/Water wall has been placed on path (rare) or path is stale
+        if self.current_path and self._path_blocked():
+            self.current_path = []
+            self.last_a_star_time = self.a_star_interval  # Force recompute
         
         # Update A* path periodically
         if self.last_a_star_time >= self.a_star_interval or not self.current_path:
@@ -320,9 +358,28 @@ class ModelBasedReflexAgent(AIAgent):
         if self.current_path and len(self.current_path) > 1:
             next_pos = self.current_path[1]
             self._move_toward(next_pos)
+            
+            # BUG 4 fix: if next tile is brick, SHOOT it (A* planned through it with cost=3)
+            # The Armor tank clears its own path by shooting obstacles
+            from config import TERRAIN as T
+            next_x, next_y = self.tank.get_forward_tile()
+            if self.grid.get_terrain(next_x, next_y) == T['BRICK']:
+                if self.tank.ready_to_shoot():
+                    self.tank.shoot()
         else:
             # No path, move randomly
             self._move_random()
+
+    def on_wall_destroyed(self, x, y):
+        """
+        Called by game engine when any wall is destroyed.
+        If the destroyed tile was on our A* path, invalidate and re-run immediately.
+        Per spec: 'Re-run A* whenever a wall in the current path is destroyed (map change event).'
+        Key insight: destroyed brick may open a SHORTER path — A* should find it.
+        """
+        if self.current_path and (x, y) in self.current_path:
+            self.current_path = []
+            self.last_a_star_time = self.a_star_interval  # Force immediate recompute next tick
 
     def _retreat_mode(self, dt, game_state):
         """

@@ -27,7 +27,7 @@ class LevelGenerator:
         self.map = None
         self.enemy_pool = None
 
-    def generate(self, max_attempts=20):
+    def generate(self, max_attempts=50):
         """
         Generate complete level.
         
@@ -131,10 +131,7 @@ class LevelGenerator:
                     if 0 <= y < GRID_HEIGHT and 0 <= x < GRID_WIDTH:
                         self.map[y][x] = TERRAIN['WATER']
         
-        # Place eagle at bottom of arena (always same position for fairness)
-        eagle_x = start_x + arena_size // 2
-        eagle_y = start_y + arena_size - 2
-        self.map[eagle_y][eagle_x] = TERRAIN['EAGLE']
+        # Boss arena has NO eagle tile — win/lose decided by boss HP and player lives only
         
         # Boss enemy pool - just 1 boss
         self.enemy_pool = [TankType.BOSS]

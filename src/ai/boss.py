@@ -161,64 +161,58 @@ class BossAIEngine:
         Higher score = better for boss.
         Lower score = worse for boss (better for player).
         
-        Factors:
-        - Distance to player (closer = better for boss)
-        - Distance to eagle (closer = better for boss)
-        - Player HP (lower = better for boss)
-        - Boss HP (higher = better for boss)
-        - Player line-of-sight (can see = better for boss)
+        Factors (from PDF spec §Boss Tank Evaluation Heuristic):
+        - Player within 3 tiles:        +60
+        - Player in line-of-sight:      +50
+        - Boss adjacent to steel:       +30
+        - Player HP missing (per HP):   +20
+        - Boss HP missing (per HP):     -40
+        - Player in forest tile:        -20
         
         Args:
             game_state: GameState object
         
         Returns:
-            Score (-1000 to +1000 range)
+            Score (clamped to -1000 to +1000)
         """
         score = 0
         
-        # Boss health (max 10 HP)
-        if self.boss_tank.alive:
-            score += self.boss_tank.hp * 30  # +30 per HP point
-        else:
-            return -1000  # Boss dead = worst position
+        # Boss dead = worst possible position
+        if not self.boss_tank.alive:
+            return -1000
         
-        # Player existence
+        # Player dead = best possible position
         if not game_state.player or not game_state.player.alive:
-            return 1000  # Player dead = best position
+            return 1000
         
         player = game_state.player
         
-        # Distance to player (closer = better, but not too punishing if far)
+        # Factor 1: Player within 3 tiles (+60) — high threat proximity
         dist_to_player = abs(self.boss_tank.x - player.x) + abs(self.boss_tank.y - player.y)
-        if dist_to_player < 3:
-            score += 100  # Very close, good for attacking
-        elif dist_to_player < 8:
-            score += 50   # Medium distance
-        else:
-            score -= 20   # Too far away
-        
-        # Distance to eagle (closer = better)
-        dist_to_eagle = abs(self.boss_tank.x - 12) + abs(self.boss_tank.y - 24)
-        if dist_to_eagle < 5:
-            score += 80   # Close to eagle, can destroy it
-        
-        # Line-of-sight to player (can attack = better)
-        if self._can_see(self.boss_tank, player):
+        if dist_to_player <= 3:
             score += 60
         
-        # Player HP (lower = better for boss)
-        score += (10 - player.hp) * 20  # Reward damaging player
+        # Factor 2: Player in line-of-sight (+50) — can shoot immediately
+        if self._can_see(self.boss_tank, player):
+            score += 50
         
-        # Boss HP loss penalty (try to stay healthy)
-        score -= (10 - self.boss_tank.hp) * 25
+        # Factor 3: Boss adjacent to steel wall (+30) — cover bonus
+        if self._is_adjacent_to_steel():
+            score += 30
         
-        # Position safety (stay away from corners/dead ends if at low HP)
-        if self.boss_tank.hp <= 3:
-            # Prefer open areas when low health
-            if self._is_enclosed(self.boss_tank):
-                score -= 50
+        # Factor 4: Player HP missing (+20 per missing HP)
+        score += (player.max_hp - player.hp) * 20
         
-        return max(-1000, min(1000, score))  # Clamp to reasonable range
+        # Factor 5: Boss HP missing (-40 per missing HP)
+        score -= (self.boss_tank.max_hp - self.boss_tank.hp) * 40
+        
+        # Factor 6: Player in forest tile (-20) — uncertain visibility
+        from config import TERRAIN
+        player_terrain = game_state.grid.get_terrain(int(player.x), int(player.y))
+        if player_terrain == TERRAIN['FOREST']:
+            score -= 20
+        
+        return max(-1000, min(1000, score))
 
     def _generate_moves(self, game_state, is_boss):
         """
@@ -347,6 +341,18 @@ class BossAIEngine:
         
         return False
 
+    def _is_adjacent_to_steel(self):
+        """
+        Check if boss tank is adjacent to a steel wall (cover bonus).
+        Used in heuristic: boss next to steel = +30 (has cover).
+        """
+        from config import TERRAIN
+        for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+            nx, ny = self.boss_tank.x + dx, self.boss_tank.y + dy
+            if self.grid.is_valid(nx, ny) and self.grid.get_terrain(nx, ny) == TERRAIN['STEEL']:
+                return True
+        return False
+
     def _is_enclosed(self, tank):
         """Check if tank is enclosed (surrounded by walls/tanks)."""
         from config import DIRECTIONS
@@ -379,7 +385,11 @@ class BossAgent:
     def decide(self, dt, game_state):
         """
         Make decision using minimax AI.
-        Update phase based on health.
+        
+        Strategy split (per PDF spec):
+        - MOVEMENT: Decided by Minimax (strategic repositioning)
+        - SHOOTING: Decided by reactive reflex — shoot whenever player is in LOS.
+                    In Phase 3 (Desperate), also shoot randomly for unpredictability.
         
         Args:
             dt: Delta time
@@ -391,27 +401,51 @@ class BossAgent:
             self._update_phase()
             self.last_phase_update = 0.0
         
-        # Get best move from minimax
-        direction, shoot = self.ai_engine.decide(game_state)
-        
-        # Apply move
+        # --- MOVEMENT: use Minimax to decide best direction ---
+        direction, _ = self.ai_engine.decide(game_state)
         self.tank.set_direction(direction)
-        if shoot and self.tank.ready_to_shoot():
+        
+        # --- SHOOTING: reactive reflex (separate from minimax) ---
+        if not self.tank.ready_to_shoot():
+            return  # Still on fire cooldown
+        
+        player = game_state.player
+        if not player or not player.alive:
+            return
+        
+        # Always shoot if player is in line-of-sight
+        if self.ai_engine._can_see(self.tank, player):
             self.tank.shoot()
+            return
+        
+        # Phase 3 (Desperate): also shoot randomly even without LOS
+        # "Unpredictable rush — ignore self-preservation"
+        if self.phase == 3:
+            import random
+            if random.random() < 0.4:  # 40% chance per decision cycle
+                self.tank.shoot()
     
     def _update_phase(self):
-        """Update boss phase based on current HP and adjust minimax depth."""
+        """Update boss phase based on current HP. Phases only advance forward (1→2→3)."""
         old_phase = self.phase
         
+        # Determine what phase this HP level corresponds to
         if self.tank.hp >= 7:
-            self.phase = 1  # Aggressive (10-7 HP)
-            self.ai_engine.max_depth = 2  # Phase 1: depth 2
+            new_phase = 1
+            new_depth = 2
         elif self.tank.hp >= 3:
-            self.phase = 2  # Tactical (6-3 HP)
-            self.ai_engine.max_depth = 3  # Phase 2: depth 3
+            new_phase = 2
+            new_depth = 3
         else:
-            self.phase = 3  # Desperate (2-1 HP)
-            self.ai_engine.max_depth = 4  # Phase 3: depth 4
+            new_phase = 3
+            new_depth = 4
+        
+        # Phases ONLY advance (1→2→3) — never retreat due to HP regeneration
+        # If regen heals boss from 2→3 HP, it stays in Phase 3, not Phase 2
+        self.phase = max(old_phase, new_phase)
+        self.ai_engine.max_depth = new_depth
         
         if old_phase != self.phase:
-            print(f"Boss entering Phase {self.phase}!")
+            phase_names = {1: 'AGGRESSIVE', 2: 'TACTICAL', 3: 'DESPERATE'}
+            print(f"Boss entering Phase {self.phase} - {phase_names[self.phase]} MODE!")
+

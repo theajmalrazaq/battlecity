@@ -5,7 +5,7 @@ Phase 2B: Search Algorithms - Module B
 
 from collections import deque
 import heapq
-from config import A_STAR_COSTS, TERRAIN
+from config import A_STAR_COSTS, TERRAIN, GRID_WIDTH, GRID_HEIGHT
 
 
 class Pathfinder:
@@ -77,6 +77,12 @@ class BFSPathfinder(Pathfinder):
                 nx, ny = x + dx, y + dy
                 
                 if (nx, ny) in visited:
+                    continue
+                
+                # Always allow reaching the goal tile (eagle is impassable but IS the target)
+                if (nx, ny) == goal:
+                    visited.add((nx, ny))
+                    queue.append(((nx, ny), path + [(nx, ny)]))
                     continue
                 
                 # Can only pass through empty and forest (not brick)
@@ -158,6 +164,12 @@ class GreedyBestFirstPathfinder(Pathfinder):
                 if (nx, ny) in visited:
                     continue
                 
+                # Always allow reaching the goal tile
+                if (nx, ny) == goal:
+                    h = 0  # At goal, h = 0
+                    neighbors.append((h, (nx, ny), path + [(nx, ny)]))
+                    continue
+                
                 # Can only pass through empty and forest
                 if not self.grid.is_passable_by_tank(nx, ny):
                     continue
@@ -221,6 +233,8 @@ class AStarPathfinder(Pathfinder):
             return A_STAR_COSTS['STEEL']
         elif terrain == TERRAIN['WATER']:
             return A_STAR_COSTS['WATER']
+        elif terrain == TERRAIN['EAGLE']:
+            return A_STAR_COSTS['EMPTY']  # BUG 5 fix: treat eagle as cost=1 (it's the goal)
         
         return float('inf')
 
@@ -266,6 +280,14 @@ class AStarPathfinder(Pathfinder):
                 nx, ny = x + dx, y + dy
                 
                 if not self.grid.is_valid(nx, ny):
+                    continue
+                
+                # Always allow reaching the goal tile (BUG 3 fix)
+                if (nx, ny) == goal:
+                    new_g = g_cost + 1  # Cost=1 to step onto goal
+                    if (nx, ny) not in visited or visited[(nx, ny)] > new_g:
+                        counter += 1
+                        heapq.heappush(pq, (new_g, counter, (nx, ny), path + [(nx, ny)], new_g))
                     continue
                 
                 # Get tile cost

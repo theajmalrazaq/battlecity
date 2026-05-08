@@ -117,39 +117,74 @@ class CSPMapGenerator:
         Returns:
             True if generation completed successfully
         """
-        # Step 1: Place protective ring around eagle
+        # Step 1: Place protective rings around eagle
         eagle_x, eagle_y = self.eagle_pos
-        protected = False
-        for dx in range(-1, 2):
-            for dy in range(-1, 2):
-                if dx == 0 and dy == 0:
-                    continue
+        
+        cardinal_neighbors = [(0, -1), (0, 1), (-1, 0), (1, 0)]
+        diagonal_neighbors = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+        
+        if self.level == 1:
+            # Level 1 (PDF spec: 2-layer protection):
+            # Protect 3 of 4 cardinal neighbors with brick/steel, leave 1 open as corridor
+            # (all 4 blocked = eagle unreachable = reachability check fails every time)
+            shuffled_cardinals = list(cardinal_neighbors)
+            random.shuffle(shuffled_cardinals)
+            for i, (dx, dy) in enumerate(shuffled_cardinals):
                 nx, ny = eagle_x + dx, eagle_y + dy
-                if 0 <= nx < self.width and 0 <= ny < self.height:
-                    if self.grid[ny][nx] is None:
-                        # Place brick/steel with 80% chance, empty with 20%
-                        if random.random() < 0.8:
+                if 0 <= nx < self.width and 0 <= ny < self.height and self.grid[ny][nx] is None:
+                    if i < 3:  # Protect 3 out of 4 cardinal neighbors
+                        terrain = random.choice([TERRAIN['BRICK'], TERRAIN['STEEL']])
+                        self.grid[ny][nx] = terrain
+                        self.wall_count += 1
+                    else:       # Leave the 4th open as a corridor
+                        self.grid[ny][nx] = TERRAIN['EMPTY']
+        else:
+            # Other levels: 90% chance protection on each cardinal neighbor
+            for dx, dy in cardinal_neighbors:
+                nx, ny = eagle_x + dx, eagle_y + dy
+                if 0 <= nx < self.width and 0 <= ny < self.height and self.grid[ny][nx] is None:
+                    if random.random() < 0.9:
+                        terrain = random.choice([TERRAIN['BRICK'], TERRAIN['STEEL']])
+                        self.grid[ny][nx] = terrain
+                        self.wall_count += 1
+                    else:
+                        self.grid[ny][nx] = TERRAIN['EMPTY']
+        
+        # Diagonal neighbors: 70% protection chance for both levels
+        for dx, dy in diagonal_neighbors:
+            nx, ny = eagle_x + dx, eagle_y + dy
+            if 0 <= nx < self.width and 0 <= ny < self.height and self.grid[ny][nx] is None:
+                if random.random() < 0.7:
+                    terrain = random.choice([TERRAIN['BRICK'], TERRAIN['STEEL']])
+                    self.grid[ny][nx] = terrain
+                    self.wall_count += 1
+                else:
+                    self.grid[ny][nx] = TERRAIN['EMPTY']
+        
+        # Layer 2 (Level 1 only): Seed protection in the 2-tile outer ring
+        if self.level == 1:
+            for dx in range(-2, 3):
+                for dy in range(-2, 3):
+                    if abs(dx) != 2 and abs(dy) != 2:
+                        continue  # Only process the outer ring
+                    nx, ny = eagle_x + dx, eagle_y + dy
+                    if 0 <= nx < self.width and 0 <= ny < self.height and self.grid[ny][nx] is None:
+                        if random.random() < 0.6:  # 60% chance in outer ring
                             terrain = random.choice([TERRAIN['BRICK'], TERRAIN['STEEL']])
                             self.grid[ny][nx] = terrain
                             self.wall_count += 1
-                            protected = True
-                        else:
-                            self.grid[ny][nx] = TERRAIN['EMPTY']
         
-        # If no protection was placed, force at least one
-        if not protected:
-            for dx in range(-1, 2):
-                for dy in range(-1, 2):
-                    if dx == 0 and dy == 0:
-                        continue
-                    nx, ny = eagle_x + dx, eagle_y + dy
-                    if 0 <= nx < self.width and 0 <= ny < self.height and self.grid[ny][nx] is None:
-                        self.grid[ny][nx] = TERRAIN['BRICK']
-                        self.wall_count += 1
-                        break
-                else:
-                    continue
-                break
+        # Ensure at least one neighbor has protection (fallback for all levels)
+        has_any_protection = any(
+            0 <= eagle_x + dx < self.width and 0 <= eagle_y + dy < self.height and
+            self.grid[eagle_y + dy][eagle_x + dx] in [TERRAIN['BRICK'], TERRAIN['STEEL']]
+            for dx, dy in cardinal_neighbors + diagonal_neighbors
+        )
+        if not has_any_protection:
+            nx, ny = eagle_x, eagle_y - 1
+            if 0 <= nx < self.width and 0 <= ny < self.height and self.grid[ny][nx] is None:
+                self.grid[ny][nx] = TERRAIN['BRICK']
+                self.wall_count += 1
         
         # Calculate density limits - LESS RESTRICTIVE to allow paths
         regular_tiles = sum(1 for y in range(self.height) for x in range(self.width)
@@ -226,27 +261,44 @@ class CSPMapGenerator:
 
     def _check_base_safety(self):
         """
-        Constraint 1: Eagle surrounded by ≥1 ring of brick/steel.
+        Constraint 1: Eagle surrounded by protective brick/steel.
         
-        Eagle must have at least one brick or steel tile in its 8 neighbors.
+        Level 1 (PDF spec): 2-layer protection required:
+          - Inner ring: At least 2 of the 8 immediate neighbors are brick/steel
+          - Outer ring: At least 2 of the 2-tile distance tiles are brick/steel
+        Other levels: At least 1 of the 8 neighbors must be brick/steel.
         """
         eagle_x, eagle_y = self.eagle_pos
         
-        # Check all 8 neighbors
-        has_protection = False
+        # Count inner ring (distance 1) protection
+        inner_protected = 0
         for dx in range(-1, 2):
             for dy in range(-1, 2):
                 if dx == 0 and dy == 0:
-                    continue  # Skip eagle itself
-                
+                    continue
                 nx, ny = eagle_x + dx, eagle_y + dy
                 if 0 <= nx < self.width and 0 <= ny < self.height:
-                    terrain = self.grid[ny][nx]
-                    if terrain in [TERRAIN['BRICK'], TERRAIN['STEEL']]:
-                        has_protection = True
-                        break
+                    if self.grid[ny][nx] in [TERRAIN['BRICK'], TERRAIN['STEEL']]:
+                        inner_protected += 1
         
-        return has_protection
+        if self.level == 1:
+            # Level 1: need both inner AND outer ring protection
+            if inner_protected < 2:
+                return False
+            # Count outer ring (distance 2) protection
+            outer_protected = 0
+            for dx in range(-2, 3):
+                for dy in range(-2, 3):
+                    if abs(dx) != 2 and abs(dy) != 2:
+                        continue
+                    nx, ny = eagle_x + dx, eagle_y + dy
+                    if 0 <= nx < self.width and 0 <= ny < self.height:
+                        if self.grid[ny][nx] in [TERRAIN['BRICK'], TERRAIN['STEEL']]:
+                            outer_protected += 1
+            return outer_protected >= 2
+        else:
+            # Other levels: at least 1 inner ring neighbor is protected
+            return inner_protected >= 1
 
     def _check_reachability(self):
         """Constraint 2: Valid BFS path from every spawn to eagle."""

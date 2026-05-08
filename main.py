@@ -49,32 +49,20 @@ class BattleCityGame:
             )
             pygame.display.set_caption(f"Battle City - Level {level}")
             self.clock = pygame.time.Clock()
-            self.terrain_cache = None  # Cache for pre-rendered terrain
-            self._update_terrain_cache()
+            # Pre-create font objects (BUG 8 fix: not per-frame)
+            self._font_small = pygame.font.Font(None, 20)
+            self._font_hud   = pygame.font.Font(None, 28)
         
         self.running = True
         self.paused = False
 
     def _setup_level(self):
-        """Setup level 1 with test configuration."""
-        # For now, just place some basic terrain and spawn player
-        # CSP map generation will come in Phase 2
-        
-        # Place eagle
-        self.state.grid.set_terrain(EAGLE_POSITION[0], EAGLE_POSITION[1], TERRAIN['EAGLE'])
-        
-        # Place some test walls
-        self._place_test_walls()
-        
-        # Spawn player
-        self.state.spawn_player()
-        
-        # Setup enemy pool (example: Level 1 has 7 Basic + 5 Fast)
-        self.state.enemy_pool = [
-            TankType.BASIC, TankType.BASIC, TankType.BASIC, TankType.BASIC,
-            TankType.BASIC, TankType.BASIC, TankType.BASIC,
-            TankType.FAST, TankType.FAST, TankType.FAST, TankType.FAST, TankType.FAST
-        ]
+        """
+        Level setup is fully handled by GameState.__init__ via LevelGenerator (CSP-based).
+        This method is intentionally a no-op — do NOT add map edits, enemy pool overrides,
+        or player spawns here, as GameState already does all of that correctly.
+        """
+        pass  # All setup done by GameState.__init__ / LevelGenerator / CSP
 
     def _place_test_walls(self):
         """Place some test walls for gameplay."""
@@ -114,6 +102,9 @@ class BattleCityGame:
                     self.running = False
                 elif event.key == pygame.K_SPACE:
                     self.paused = not self.paused
+                # Shoot on KEY DOWN (edge trigger — catches quick taps)
+                elif not self.paused and event.key in (pygame.K_b, pygame.K_LSHIFT):
+                    input_state['shoot'] = True
         
         if not self.paused:
             keys = pygame.key.get_pressed()
@@ -127,7 +118,8 @@ class BattleCityGame:
             elif keys[pygame.K_RIGHT]:
                 input_state['direction'] = 'RIGHT'
             
-            if keys[pygame.K_z] or keys[pygame.K_LCTRL]:
+            # Also allow held shoot (get_pressed fallback for held key)
+            if keys[pygame.K_b] or keys[pygame.K_LSHIFT]:
                 input_state['shoot'] = True
         
         return input_state
@@ -137,8 +129,15 @@ class BattleCityGame:
         if not self.use_graphics:
             return
         
-        # Draw pre-cached terrain
-        self.screen.blit(self.terrain_cache, (0, 0))
+        # Draw terrain fresh each frame (BUG 2 fix: cache was never updated on brick destroy)
+        for y in range(GRID_HEIGHT):
+            for x in range(GRID_WIDTH):
+                terrain = self.state.grid.get_terrain(x, y)
+                color = self._get_terrain_color(terrain)
+                pygame.draw.rect(
+                    self.screen, color,
+                    (x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                )
         
         # Draw tanks
         for tank in self.state.tanks:
@@ -186,10 +185,9 @@ class BattleCityGame:
         dir_y = y + (tank.direction[1] * indicator_length)
         pygame.draw.line(self.screen, (255, 255, 255), (x, y), (dir_x, dir_y), 2)
         
-        # Draw HP if armor tank
+        # Draw HP if armor tank (BUG 8 fix: use pre-created font)
         if tank.hp > 1:
-            font = pygame.font.Font(None, 20)
-            hp_text = font.render(str(tank.hp), True, (255, 255, 255))
+            hp_text = self._font_small.render(str(tank.hp), True, (255, 255, 255))
             self.screen.blit(hp_text, (x - 8, y - 8))
 
     def _draw_bullet(self, bullet):
@@ -204,7 +202,7 @@ class BattleCityGame:
         if not PYGAME_AVAILABLE:
             return
         
-        font = pygame.font.Font(None, 28)
+        font = self._font_hud
         status = self.state.get_status()
         
         texts = [
@@ -221,20 +219,24 @@ class BattleCityGame:
                     break
             
             if boss_tank:
-                texts.append(f"BOSS HP: {boss_tank.hp}/10 | Phase: {boss_tank.phase}")
-                texts.append(f"Destroy the boss to win! Protect your eagle at bottom!")
+                phase_labels = {1: 'Aggressive', 2: 'Tactical', 3: 'Desperate'}
+                phase_label = phase_labels.get(boss_tank.phase, '?')
+                texts.append(f"BOSS HP: {boss_tank.hp}/10 | Phase {boss_tank.phase}: {phase_label}")
+                texts.append(f"Destroy the Boss to win!")
             else:
-                texts.append("Boss: 0/1")
+                texts.append("Boss defeated!")
         else:
-            texts.append(f"Enemies: {status['enemies_defeated']}/{20}")
-            texts.append(f"Active: {status['active_enemies']}")
+            # Total enemies = initial pool size (defeated + remaining + active)
+            total_enemies = status['enemies_defeated'] + status['enemies_remaining'] + status['active_enemies']
+            texts.append(f"Enemies: {status['enemies_defeated']}/{total_enemies}")
+            texts.append(f"Active: {status['active_enemies']} | Remaining: {status['enemies_remaining']}")
         
         texts.extend([
             f"Bullets: {status['bullets_active']}",
             f"Time: {status['time']:.1f}s",
         ])
         
-        texts.append("CONTROLS: Arrow Keys=Move | Z/Ctrl=Shoot | Space=Pause | ESC=Quit")
+        texts.append("CONTROLS: Arrow Keys=Move | B / Shift=Shoot | Space=Pause | ESC=Quit")
         
         if self.paused:
             texts.insert(0, "PAUSED - Press Space to Resume")
@@ -246,7 +248,7 @@ class BattleCityGame:
     def run(self):
         """Main game loop."""
         print(f"Starting Battle City - Level {self.level}")
-        print("Controls: Arrow Keys = Move, Z/Ctrl = Shoot, Space = Pause, ESC = Quit")
+        print("Controls: Arrow Keys = Move, B / Shift = Shoot, Space = Pause, ESC = Quit")
         
         if self.use_graphics:
             self._run_with_graphics()
