@@ -36,7 +36,7 @@ TANK_TYPES = {
     },
     'ARMOR': {
         'hp': 4,
-        'speed': 1.0,         # PDF Page 8: "1/3 speed of Fast"
+        'speed': 0.65,        # Slowed for better balance in Level 2
         'fire_rate': 2.0,
         'color': (200, 100, 50),
         'ai_type': 'model_based_reflex'

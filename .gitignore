@@ -2,8 +2,4 @@ __pycache__/
 *.pyc
 .DS_Store
 pdf_content.txt
-pic1.jpg
-pic2.jpg
-pic3.jpg
-pic4.png
 scratch/
