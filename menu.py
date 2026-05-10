@@ -104,11 +104,11 @@ class MainMenu:
                 self.screen.blit(icon, (80, y_offset - 5))
             
             # Level name
-            text = option_font.render(level['name'], True, color)
+            text = option_font.render(str(level['name']), True, color)
             self.screen.blit(text, (160, y_offset))
             
             # Description
-            desc_text = desc_font.render(level['desc'], True, (150, 150, 150))
+            desc_text = desc_font.render(str(level['desc']), True, (150, 150, 150))
             self.screen.blit(desc_text, (160, y_offset + 35))
             
             y_offset += 100
