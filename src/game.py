@@ -1,8 +1,3 @@
-"""
-Game State & Main Game Loop
-Phase 1E: Game Loop (10-step sequence)
-"""
-
 import time
 from enum import Enum
 from config import (
@@ -20,7 +15,6 @@ from ai.agents import AIAgentFactory
 
 
 class GamePhase(Enum):
-    """Enum for game state."""
     PLAYING = 'playing'
     PAUSED = 'paused'
     LEVEL_WIN = 'level_win'
@@ -28,53 +22,46 @@ class GamePhase(Enum):
 
 
 class GameState:
-    """
-    Represents the complete state of a game session.
-    """
+    
 
     def __init__(self, level=1):
-        """
-        Initialize a new game.
         
-        Args:
-            level: Level number (1, 2, or 'BOSS')
-        """
         self.level = level
         self.phase = GamePhase.PLAYING
         self.level_config = LEVEL_CONFIG.get(level, LEVEL_CONFIG[1])
         
         # Core systems
         self.grid = Grid()
-        self.tanks = []  # All tanks (player + enemies)
+        self.tanks = []  
         self.bullets = BulletManager()
-        self.ai_agents = {}  # Tank -> AIAgent mapping
+        self.ai_agents = {} 
         self.collision_detector = CollisionDetector(
             self.grid, self.tanks, self.bullets, EAGLE_POSITION
         )
         
-        # Generate level using CSP
+     
         level_gen = LevelGenerator(level)
         level_data = level_gen.generate()
         
         if level_data is None:
             print(f"ERROR: Failed to generate level {level}")
             self.enemy_pool = []
-            # Prevent instant win from empty pool — mark as game over with error
+           
             self.phase = GamePhase.GAME_OVER
         else:
-            # Load generated map into grid
+  
             for y in range(len(level_data['map'])):
                 for x in range(len(level_data['map'][y])):
                     self.grid.set_terrain(x, y, level_data['map'][y][x])
             
-            # Set enemy pool
+          
             self.enemy_pool = level_data['enemy_pool'][:]
         
         # Game time
         self.elapsed_time = 0.0
         self.tick_count = 0
         
-        # Events log (for debugging/replay)
+   
         self.events = []
         
         # Player
@@ -85,19 +72,18 @@ class GameState:
         self.active_enemies = 0
         self.enemies_defeated = 0
         self.last_spawn_time = 0.0
-        self._player_contact_set = set()  # Tracks enemies currently touching player (BUG 6 fix)
+        self._player_contact_set = set() 
         
-        # Spawn boss immediately if boss level (before player so boss is at correct location)
+       
         if self.level == 'BOSS' and self.enemy_pool:
             boss_type = self.enemy_pool.pop(0)
-            # Pre-spawn boss at (13, 7) before player, so player doesn't collide
-            self.active_enemies = 0  # Reset counter before spawning
-            boss = self.spawn_enemy(boss_type)  # Spawn boss at (13, 7)
+      
+            self.active_enemies = 0 
+            boss = self.spawn_enemy(boss_type)
         
-        # Now spawn player (will be at 13, 18 for boss level, which is clear)
-        self.spawn_player()  # Spawn player at start
-        # spawn_player() reassigns self.tanks (list comprehension at line 128)
-        # → collision_detector.tanks still points to the old list → sync it now
+
+        self.spawn_player()  
+     
         self.collision_detector.tanks = self.tanks
 
     def add_event(self, event_type, data):

@@ -1,14 +1,9 @@
-"""
-Battle City Configuration - Global Constants
-AL2002 Artificial Intelligence Lab | Spring 2026
-"""
 
-# ============ GRID & MAP SYSTEM ============
 GRID_WIDTH = 26
 GRID_HEIGHT = 26
 TILE_SIZE = 26  # Adjusted for vertical fit (fits comfortably on all screens)
 
-# ============ TERRAIN TYPES ============
+
 TERRAIN = {
     'EMPTY': 0,      # Passable by tanks and bullets
     'BRICK': 1,      # Destructible by bullets
@@ -18,7 +13,7 @@ TERRAIN = {
     'EAGLE': 5       # Base/Goal - destroying it = LOSE
 }
 
-# ============ TANK PROPERTIES ============
+
 TANK_TYPES = {
     'BASIC': {
         'hp': 1,
@@ -57,10 +52,9 @@ TANK_TYPES = {
     }
 }
 
-# ============ BULLET PROPERTIES ============
-BULLET_SPEED = 6.0  # 2x Fast tank speed (spec)
 
-# ============ SPAWN SYSTEM ============
+BULLET_SPEED = 6.0  
+
 SPAWN_POINTS = [
     (0, 0),      # Top-left
     (12, 0),     # Top-center
@@ -68,15 +62,14 @@ SPAWN_POINTS = [
 ]
 PLAYER_SPAWN = (4, 24)
 EAGLE_POSITION = (12, 24)
-SPAWN_FAIRNESS_DISTANCE = 10  # Manhattan distance (spec: no spawn within 10 tiles of player)
+SPAWN_FAIRNESS_DISTANCE = 10 
 
-# ============ GAME RULES ============
+
 PLAYER_LIVES = 10
 MAX_ACTIVE_TANKS = 4
-SPAWN_DELAY = 0.5  # seconds between spawns (faster spawning)
-LEVEL_ENEMY_POOL = 20  # Total enemies per level
+SPAWN_DELAY = 0.5  
+LEVEL_ENEMY_POOL = 20  
 
-# ============ DIRECTIONS ============
 DIRECTIONS = {
     'UP': (0, -1),
     'DOWN': (0, 1),
@@ -93,11 +86,10 @@ GAME_STATE = {
     'GAME_OVER': 'game_over'
 }
 
-# ============ FPS & TIMING ============
+
 FPS = 60
 TICK_RATE = 60  # Game ticks per second
 
-# ============ LEVEL CONFIGURATIONS ============
 LEVEL_CONFIG = {
     1: {
         'name': 'Brick Maze',
@@ -131,14 +123,14 @@ LEVEL_CONFIG = {
     }
 }
 
-# ============ BOSS PHASES ============
+
 BOSS_PHASES = {
     1: {'hp_min': 7, 'hp_max': 10, 'depth': 2, 'speed': 0.25, 'fire_rate': 2.0},   # Aggressive
     2: {'hp_min': 3, 'hp_max': 6,  'depth': 3, 'speed': 0.333, 'fire_rate': 1.5},  # Tactical
     3: {'hp_min': 1, 'hp_max': 2,  'depth': 4, 'speed': 0.5, 'fire_rate': 0.8}     # Desperate
 }
 
-# ============ A* PATHFINDING COSTS ============
+
 A_STAR_COSTS = {
     'EMPTY': 1,
     'FOREST': 1,
@@ -148,7 +140,6 @@ A_STAR_COSTS = {
     'TANK': float('inf')    # blocked
 }
 
-# ============ MINIMAX HEURISTIC SCORES ============
 MINIMAX_HEURISTIC = {
     'player_within_3': 60,
     'player_los': 50,

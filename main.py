@@ -1,7 +1,3 @@
-"""
-Battle City - Main Entry Point
-Minimal test harness for Phase 0 & Phase 1
-"""
 
 import sys
 import os
@@ -16,24 +12,16 @@ try:
     import pygame
     PYGAME_AVAILABLE = True
 except ImportError:
+    pygame = None
     PYGAME_AVAILABLE = False
     print("Warning: pygame not installed. Running in headless mode.")
 
 
 class BattleCityGame:
-    """
-    Main game controller.
-    Handles pygame initialization, rendering, and game loop.
-    """
+   
 
     def __init__(self, level=1, use_graphics=True):
-        """
-        Initialize the game.
-        
-        Args:
-            level: Starting level (1, 2, or 'BOSS')
-            use_graphics: If True, render with pygame; else headless mode
-        """
+      
         self.use_graphics = use_graphics and PYGAME_AVAILABLE
         self.level = level
         
@@ -61,7 +49,7 @@ class BattleCityGame:
             self._load_assets()
 
     def _load_assets(self):
-        """Load and scale sprite assets."""
+       
         self.sprites = {}
         asset_dir = os.path.join(os.path.dirname(__file__), 'assets')
         
@@ -70,14 +58,14 @@ class BattleCityGame:
             return
             
         try:
-            # Helper to load, scale, and handle alpha
+       
             def load_scaled(name, size=(TILE_SIZE, TILE_SIZE)):
                 path = os.path.join(asset_dir, f"{name}.png")
                 if os.path.exists(path):
-                    # Load image with per-pixel alpha if available
+                  
                     surf = pygame.image.load(path).convert_alpha()
 
-                    # Auto-mask: if image has no transparent pixels, use the corner color as colorkey
+                    
                     try:
                         w, h = surf.get_width(), surf.get_height()
                         corners = [surf.get_at((0, 0)), surf.get_at((w - 1, 0)), surf.get_at((0, h - 1)), surf.get_at((w - 1, h - 1))]
@@ -128,23 +116,17 @@ class BattleCityGame:
             print(f"Error loading assets: {e}")
 
     def _setup_level(self):
-        """
-        Level setup is fully handled by GameState.__init__ via LevelGenerator (CSP-based).
-        This method is intentionally a no-op — do NOT add map edits, enemy pool overrides,
-        or player spawns here, as GameState already does all of that correctly.
-        """
-        pass  # All setup done by GameState.__init__ / LevelGenerator / CSP
+     
+        pass  
 
     def _place_test_walls(self):
-        """Place some test walls for gameplay."""
-        # Create a simple brick maze
+      
         for x in range(2, 10):
             for y in range(5, 15):
                 if (x + y) % 3 == 0:
                     self.state.grid.set_terrain(x, y, TERRAIN['BRICK'])
 
     def _update_terrain_cache(self):
-        """Pre-render terrain to a surface for faster rendering."""
         if not self.use_graphics:
             return
         
@@ -162,7 +144,7 @@ class BattleCityGame:
                 )
 
     def handle_input(self):
-        """Handle pygame events and return input state."""
+    
         input_state = {'direction': 'NONE', 'shoot': False}
         
         for event in pygame.event.get():
@@ -179,7 +161,7 @@ class BattleCityGame:
         
         if not self.paused:
             keys = pygame.key.get_pressed()
-            # Check direction keys
+ 
             new_dir = 'NONE'
             if keys[pygame.K_UP]: new_dir = 'UP'
             elif keys[pygame.K_DOWN]: new_dir = 'DOWN'
@@ -188,22 +170,21 @@ class BattleCityGame:
             
             input_state['direction'] = new_dir
             
-            # SHOOTING (Isolated from direction)
-            # Remove SPACE from shoot to avoid pause conflict
+        
             if keys[pygame.K_b] or keys[pygame.K_LSHIFT]:
                 input_state['shoot'] = True
         
         return input_state
 
     def render(self, flip=True):
-        """Render the game using pygame."""
+       
         if not self.use_graphics:
             return
         
-        # Draw background (Pure Black)
+     
         self.screen.fill((0, 0, 0))
         
-        # Draw terrain (Offset by 40px for HUD)
+
         y_offset = 40
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
@@ -225,16 +206,16 @@ class BattleCityGame:
                     color = self._get_terrain_color(terrain)
                     pygame.draw.rect(self.screen, color, (draw_pos[0], draw_pos[1], TILE_SIZE, TILE_SIZE))
         
-        # Draw tanks
+ 
         for tank in self.state.tanks:
             if tank.alive:
                 self._draw_tank(tank)
         
-        # Draw bullets
+   
         for bullet in self.state.bullets.get_active_bullets():
             self._draw_bullet(bullet)
         
-        # Draw HUD
+      
         self._draw_hud()
         
         if flip:
@@ -243,7 +224,7 @@ class BattleCityGame:
     def _get_terrain_color(self, terrain):
         """Get color for terrain type (Fallback)."""
         colors = {
-            TERRAIN['EMPTY']: (0, 0, 0),             # Pure black background
+            TERRAIN['EMPTY']: (0, 0, 0),            
             TERRAIN['BRICK']: (200, 100, 50),
             TERRAIN['STEEL']: (100, 100, 120),
             TERRAIN['WATER']: (0, 0, 255),
@@ -256,8 +237,7 @@ class BattleCityGame:
         """Draw a tank on screen using sprites with smooth pixel interpolation."""
         y_offset = 40
         
-        # SMOOTH INTERPOLATION: Calculate visual pixel position
-        # Fix: If not moving, don't interpolate (prevents phasing through walls)
+   
         visual_x = tank.x
         visual_y = tank.y
         if tank.direction_name != 'NONE' and tank.move_progress < 1.0:
@@ -267,12 +247,11 @@ class BattleCityGame:
         # Convert to screen coordinates
         rect_x, rect_y = visual_x * TILE_SIZE, visual_y * TILE_SIZE + y_offset
         
-        # Determine sprite key
+       
         t_type = tank.tank_type.value.lower()
         if tank.is_player:
             t_type = 'player'
-        
-        # Get direction (default to UP if NONE)
+      
         d_name = tank.direction_name
         if d_name == 'NONE':
             d_name = 'UP'
@@ -283,7 +262,7 @@ class BattleCityGame:
         if sprite:
             self.screen.blit(sprite, (rect_x, rect_y))
         else:
-            # Fallback to primitive shapes (larger enemy circles to match sprites)
+        
             x, y = rect_x + TILE_SIZE // 2, rect_y + TILE_SIZE // 2
             radius = TILE_SIZE // 3
             pygame.draw.circle(self.screen, tank.color, (x, y), radius)
@@ -330,7 +309,7 @@ class BattleCityGame:
             f"LVL {status['level']} | LIVES: {status['player_lives']}",
         ]
         
-        # Add boss info if boss level
+        
         if self.level == 'BOSS':
             boss_tank = None
             for tank in self.state.tanks:
@@ -348,7 +327,7 @@ class BattleCityGame:
         
         texts.append(f"TIME: {status['time']:.0f}s")
         
-        # Draw sleek dark HUD bar at top
+     
         pygame.draw.rect(self.screen, (20, 20, 25), (0, 0, self.WIDTH, 40))
         pygame.draw.line(self.screen, (255, 200, 50), (0, 39), (self.WIDTH, 39), 2) # Golden divider
         
@@ -356,8 +335,7 @@ class BattleCityGame:
         hud_str = "   ".join(texts)
         surface = font.render(hud_str, True, (255, 255, 255))
         self.screen.blit(surface, (20, 10))
-        
-        # Small controls text at bottom
+
         ctrl_font = pygame.font.Font(None, 18)
         ctrl_surface = ctrl_font.render("ARROWS: Move | B: Shoot | SPACE: Pause", True, (100, 100, 100))
         self.screen.blit(ctrl_surface, (self.WIDTH - 250, self.HEIGHT - 20))
@@ -391,19 +369,18 @@ class BattleCityGame:
             
             self.render()
         
-        # Only display game over if game actually ended (not just window closed)
+  
         if not self.running:
-            return  # User closed window, don't show game over screen
+            return 
         
         game_ended = True
-        # Game ended - display result
+       
         self._display_game_over()
-        
-        # Return to menu instead of quitting
+
         return
 
     def _display_game_over(self):
-        """Display game over message and wait for user."""
+
         if not self.use_graphics:
             return
         
@@ -473,14 +450,14 @@ class BattleCityGame:
             pygame.display.flip()
             self.clock.tick(60)
         
-        # Auto-close after 5 seconds
+   
         print("Returning to menu...")
 
     def _run_headless(self):
-        """Game loop without graphics (for testing)."""
+       
         print("Running in headless mode (no graphics)")
         ticks = 0
-        max_ticks = 600  # 10 seconds at 60 FPS
+        max_ticks = 600 
         
         while self.running and ticks < max_ticks:
             dt = 1.0 / 60.0  # 60 FPS
@@ -500,7 +477,7 @@ class BattleCityGame:
 
 
 def main():
-    """Entry point."""
+  
     import argparse
     
     parser = argparse.ArgumentParser(description='Battle City - AI Semester Project')

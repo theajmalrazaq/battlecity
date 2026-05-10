@@ -1,21 +1,11 @@
-"""
-Boss AI - Adversarial Engine with Minimax & Alpha-Beta Pruning
-Phase 3A: Adversarial AI - Boss Tank Decision Logic
 
-Implements:
-- Minimax algorithm with game tree search
-- Alpha-Beta pruning for optimization
-- Evaluation heuristic function
-- Depth-limited search (4-6 levels)
-- Move generation from current board state
-"""
 
 import copy
 from enum import Enum
 
 
 class MoveType(Enum):
-    """Possible moves the boss can make."""
+   
     MOVE_UP = 'UP'
     MOVE_DOWN = 'DOWN'
     MOVE_LEFT = 'LEFT'
@@ -25,21 +15,10 @@ class MoveType(Enum):
 
 
 class BossAIEngine:
-    """
-    Minimax-based adversarial AI for Boss Tank.
-    Uses alpha-beta pruning to optimize search.
-    """
+   
 
     def __init__(self, boss_tank, grid, player_pos=None, depth=4):
-        """
-        Initialize Boss AI Engine.
         
-        Args:
-            boss_tank: Tank object (the boss)
-            grid: Grid object for pathfinding
-            player_pos: Player position for heuristic
-            depth: Search depth (4-6 recommended)
-        """
         self.boss_tank = boss_tank
         self.grid = grid
         self.player_pos = player_pos
@@ -50,15 +29,7 @@ class BossAIEngine:
         self.cutoffs = 0  # Alpha-beta pruning cutoffs
 
     def decide(self, game_state):
-        """
-        Make optimal boss decision using minimax with alpha-beta pruning.
-        
-        Args:
-            game_state: GameState object
-        
-        Returns:
-            Best action: (direction, shoot) tuple
-        """
+       
         self.nodes_explored = 0
         self.cutoffs = 0
         self.player_pos = game_state.player.get_position() if game_state.player else None
@@ -106,10 +77,7 @@ class BossAIEngine:
             game_state.player.x, game_state.player.y = orig_player_x, orig_player_y
 
     def benchmark_pruning(self, game_state):
-        """
-        Run one root decision pass with and without alpha-beta pruning.
-        Returns a dict with node counts, cutoff count, and speedup.
-        """
+        
         with_pruning = self._root_search_for_benchmark(game_state, use_pruning=True)
         without_pruning = self._root_search_for_benchmark(game_state, use_pruning=False)
 
@@ -124,7 +92,7 @@ class BossAIEngine:
         }
 
     def _root_search_for_benchmark(self, game_state, use_pruning):
-        """Run one root minimax pass and return explored-node stats."""
+        
         if use_pruning:
             self.nodes_pruned = 0
         else:
@@ -177,9 +145,7 @@ class BossAIEngine:
         return {'nodes': nodes, 'best_move': best_move, 'cutoffs': self.cutoffs}
 
     def _minimax(self, game_state, depth, alpha, beta, is_maximizing, use_pruning=True):
-        """
-        Minimax algorithm with optional alpha-beta pruning.
-        """
+        
         if use_pruning:
             self.nodes_pruned += 1
         else:
@@ -225,26 +191,7 @@ class BossAIEngine:
             return min_eval
 
     def _evaluate(self, game_state):
-        """
-        Evaluation heuristic - score the current board position.
-        
-        Higher score = better for boss.
-        Lower score = worse for boss (better for player).
-        
-        Factors (from PDF spec §Boss Tank Evaluation Heuristic):
-        - Player within 3 tiles:        +60
-        - Player in line-of-sight:      +50
-        - Boss adjacent to steel:       +30
-        - Player HP missing (per HP):   +20
-        - Boss HP missing (per HP):     -40
-        - Player in forest tile:        -20
-        
-        Args:
-            game_state: GameState object
-        
-        Returns:
-            Score (clamped to -1000 to +1000)
-        """
+       
         score = 0
         
         # Boss dead = worst possible position
@@ -302,19 +249,7 @@ class BossAIEngine:
         return max(-1000, min(1000, score))
 
     def _generate_moves(self, game_state, is_boss):
-        """
-        Generate all legal moves from current state.
-        
-        For boss: All direction + shoot combinations
-        For player: Simulated moves (heuristic-based, not reading actual input)
-        
-        Args:
-            game_state: GameState object
-            is_boss: True if generating boss moves, False for player moves
-        
-        Returns:
-            List of (direction, shoot) tuples
-        """
+       
         moves = []
         
         if is_boss:
@@ -329,8 +264,7 @@ class BossAIEngine:
         directions = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'NONE']
         
         for direction in directions:
-            # Boss can ALWAYS rotate to a direction, even if movement is blocked
-            # This allows it to pivot and shoot at the player (essential for AI awareness)
+       
             moves.append((direction, False))
             moves.append((direction, True))  # Rotate + shoot
         
@@ -364,17 +298,7 @@ class BossAIEngine:
         return True
 
     def _simulate_move(self, game_state, move, is_boss):
-        """
-        Simulate a move and return new game state (shallow copy).
-        
-        Args:
-            game_state: GameState object
-            move: (direction, shoot) tuple
-            is_boss: True if simulating boss move
-        
-        Returns:
-            New game state after move
-        """
+       
         # Create shallow copy of state
         new_state = copy.copy(game_state)
         
@@ -393,7 +317,7 @@ class BossAIEngine:
         return new_state
 
     def _is_terminal(self, game_state):
-        """Check if this is a terminal state (game over)."""
+     
         if not self.boss_tank.alive:
             return True
         if not game_state.player or not game_state.player.alive:
@@ -401,7 +325,7 @@ class BossAIEngine:
         return False
 
     def _can_see(self, tank1, tank2):
-        """Check if tank1 can see tank2 (line-of-sight)."""
+      
         x1, y1 = tank1.x, tank1.y
         x2, y2 = tank2.x, tank2.y
         
@@ -424,10 +348,7 @@ class BossAIEngine:
         return False
 
     def _is_adjacent_to_steel(self):
-        """
-        Check if boss tank is adjacent to a steel wall (cover bonus).
-        Used in heuristic: boss next to steel = +30 (has cover).
-        """
+       
         from config import TERRAIN
         for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
             nx, ny = self.boss_tank.x + dx, self.boss_tank.y + dy
@@ -436,7 +357,7 @@ class BossAIEngine:
         return False
 
     def _is_towards_player(self, direction):
-        """Helper for move ordering: returns True if move is toward player."""
+      
         if direction == 'NONE' or not self.player_pos:
             return False
         
@@ -450,7 +371,7 @@ class BossAIEngine:
         return new_dist < old_dist
 
     def _is_enclosed(self, tank):
-        """Check if tank is enclosed (surrounded by walls/tanks)."""
+      
         from config import DIRECTIONS
         
         enclosed_count = 0
@@ -467,10 +388,10 @@ class BossAIEngine:
 
 
 class BossAgent:
-    """Wrapper agent for boss tank using minimax AI."""
+   
     
     def __init__(self, tank, grid, eagle_pos=None):
-        """Initialize boss agent."""
+       
         self.tank = tank
         self.grid = grid
         self.eagle_pos = eagle_pos or (12, 24)
@@ -480,17 +401,7 @@ class BossAgent:
         self.pruning_stats_timer = 0.0
     
     def decide(self, dt, game_state):
-        """
-        Make decision using minimax AI.
-        
-        Strategy split (per PDF spec):
-        - MOVEMENT: Decided by Minimax (strategic repositioning)
-        - SHOOTING: Decided by reactive reflex — shoot whenever player is in LOS.
-        
-        Args:
-            dt: Delta time
-            game_state: GameState object
-        """
+       
         # Update phase based on HP
         self.last_phase_update += dt
         self.pruning_stats_timer += dt
@@ -559,11 +470,7 @@ class BossAgent:
                 self.tank.shoot()
     
     def _update_phase(self):
-        """Update boss stats based on current HP (PDF spec Page 9 & 12).
-        
-        Always applies the correct stats for the current HP level.
-        Phase transitions are one-way (1→2→3, never backwards).
-        """
+      
         old_phase = self.phase
         
         # Determine phase and stats from current HP
@@ -583,12 +490,12 @@ class BossAgent:
             new_speed = 3.5   # Phase 3: Fast
             new_fire = 0.8    # Phase 3: 1 bullet per 0.8s
         
-        # Phases only advance (1→2→3), never retreat
+       
         new_phase = max(old_phase, new_phase)
         
-        # ALWAYS apply stats (fixes the "frozen boss" bug where phase 1→1 was skipped)
+   
         self.phase = new_phase
-        self.tank.phase = new_phase  # Sync for HUD display
+        self.tank.phase = new_phase  
         self.ai_engine.max_depth = new_depth
         self.tank.speed = new_speed
         self.tank.fire_rate = new_fire
