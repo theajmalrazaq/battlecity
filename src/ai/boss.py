@@ -105,6 +105,77 @@ class BossAIEngine:
             self.boss_tank.x, self.boss_tank.y = orig_boss_x, orig_boss_y
             game_state.player.x, game_state.player.y = orig_player_x, orig_player_y
 
+    def benchmark_pruning(self, game_state):
+        """
+        Run one root decision pass with and without alpha-beta pruning.
+        Returns a dict with node counts, cutoff count, and speedup.
+        """
+        with_pruning = self._root_search_for_benchmark(game_state, use_pruning=True)
+        without_pruning = self._root_search_for_benchmark(game_state, use_pruning=False)
+
+        pruned_nodes = with_pruning['nodes']
+        standard_nodes = without_pruning['nodes']
+        speedup = (standard_nodes / pruned_nodes) if pruned_nodes > 0 else float('inf')
+
+        return {
+            'with_pruning': with_pruning,
+            'without_pruning': without_pruning,
+            'speedup': speedup,
+        }
+
+    def _root_search_for_benchmark(self, game_state, use_pruning):
+        """Run one root minimax pass and return explored-node stats."""
+        if use_pruning:
+            self.nodes_pruned = 0
+        else:
+            self.nodes_standard = 0
+        self.cutoffs = 0
+
+        if not game_state.player:
+            return {'nodes': 0, 'best_move': ('NONE', False), 'cutoffs': 0}
+
+        orig_boss_x, orig_boss_y = self.boss_tank.x, self.boss_tank.y
+        orig_player_x, orig_player_y = game_state.player.x, game_state.player.y
+
+        best_score = float('-inf')
+        best_move = ('NONE', False)
+        alpha = float('-inf')
+        beta = float('inf')
+
+        possible_moves = self._generate_moves(game_state, is_boss=True)
+        possible_moves.sort(key=lambda m: (m[1], self._is_towards_player(m[0])), reverse=True)
+
+        for move in possible_moves:
+            new_state = self._simulate_move(game_state, move, is_boss=True)
+            score = self._minimax(
+                new_state,
+                self.max_depth - 1,
+                alpha,
+                beta,
+                is_maximizing=False,
+                use_pruning=use_pruning,
+            )
+
+            # Restore positions after each candidate evaluation
+            self.boss_tank.x, self.boss_tank.y = orig_boss_x, orig_boss_y
+            game_state.player.x, game_state.player.y = orig_player_x, orig_player_y
+
+            if score > best_score:
+                best_score = score
+                best_move = move
+
+            if use_pruning:
+                alpha = max(alpha, score)
+                if beta <= alpha:
+                    break
+
+        # Final restore guard
+        self.boss_tank.x, self.boss_tank.y = orig_boss_x, orig_boss_y
+        game_state.player.x, game_state.player.y = orig_player_x, orig_player_y
+
+        nodes = self.nodes_pruned if use_pruning else self.nodes_standard
+        return {'nodes': nodes, 'best_move': best_move, 'cutoffs': self.cutoffs}
+
     def _minimax(self, game_state, depth, alpha, beta, is_maximizing, use_pruning=True):
         """
         Minimax algorithm with optional alpha-beta pruning.
@@ -406,6 +477,7 @@ class BossAgent:
         self.ai_engine = BossAIEngine(tank, grid, depth=2)  # Phase 1: depth 2 (PDF spec)
         self.phase = 1  # 1, 2, or 3
         self.last_phase_update = 0.0
+        self.pruning_stats_timer = 0.0
     
     def decide(self, dt, game_state):
         """
@@ -421,9 +493,23 @@ class BossAgent:
         """
         # Update phase based on HP
         self.last_phase_update += dt
+        self.pruning_stats_timer += dt
         if self.last_phase_update >= 0.5:  # Check every 0.5 seconds
             self._update_phase()
             self.last_phase_update = 0.0
+
+        # Print pruning benchmark periodically during boss play
+        if self.pruning_stats_timer >= 1.0:
+            stats = self.ai_engine.benchmark_pruning(game_state)
+            with_nodes = stats['with_pruning']['nodes']
+            without_nodes = stats['without_pruning']['nodes']
+            speedup = stats['speedup']
+            cutoffs = stats['with_pruning']['cutoffs']
+            print(
+                f"[Boss Pruning] with={with_nodes} without={without_nodes} "
+                f"speedup={speedup:.2f}x cutoffs={cutoffs}"
+            )
+            self.pruning_stats_timer = 0.0
         
         # PERFORMANCE: Decision cycle buffed to 0.05s for "Twitch" reactions
         self.decision_timer = getattr(self, 'decision_timer', 0.0) + dt

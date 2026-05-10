@@ -50,12 +50,12 @@ class CollisionDetector:
         if not self.grid.is_passable_by_tank(target_x, target_y):
             return False
         
-        # Check for other tanks
+        # Check for other tanks currently occupying the target tile
         for other_tank in self.tanks:
             if other_tank is tank:
                 continue  # Skip self
             if other_tank.alive and other_tank.x == target_x and other_tank.y == target_y:
-                return False  # Occupied by another tank
+                return False  # Tile occupied by another tank
         
         return True
 

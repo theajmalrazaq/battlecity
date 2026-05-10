@@ -5,6 +5,7 @@ Phase 2B: Agents & Behaviors - Module B
 
 import time
 import random
+from collections import deque
 from pathfinding import PathfindingFactory
 from config import DIRECTIONS
 
@@ -37,6 +38,29 @@ class AIAgent:
             game_state: GameState object (for other agents' positions, etc.)
         """
         raise NotImplementedError
+
+    def _can_see_eagle(self, x1=None, y1=None):
+        """Check if the eagle is in straight line-of-sight from a tile."""
+        if x1 is None or y1 is None:
+            x1, y1 = self.tank.get_position()
+
+        eagle_x, eagle_y = self.eagle_pos
+
+        if x1 == eagle_x:
+            min_y, max_y = min(y1, eagle_y), max(y1, eagle_y)
+            for y in range(min_y + 1, max_y):
+                if self.grid.is_solid(x1, y):
+                    return False
+            return True
+
+        if y1 == eagle_y:
+            min_x, max_x = min(x1, eagle_x), max(x1, eagle_x)
+            for x in range(min_x + 1, max_x):
+                if self.grid.is_solid(x, y1):
+                    return False
+            return True
+
+        return False
 
 
 class SimpleReflexAgent(AIAgent):
@@ -107,6 +131,12 @@ class SimpleReflexAgent(AIAgent):
         else:
             # No path, move randomly
             self._move_random()
+        
+        # Rule 4: Shoot eagle if adjacent
+        tank_x, tank_y = self.tank.get_position()
+        eagle_x, eagle_y = self.eagle_pos
+        if abs(tank_x - eagle_x) + abs(tank_y - eagle_y) <= 1:
+            self.tank.shoot()
 
     def on_wall_destroyed(self, x, y):
         """
@@ -177,7 +207,6 @@ class SimpleReflexAgent(AIAgent):
         direction = random.choice(directions)
         self.tank.set_direction(direction)
 
-
 class GoalBasedAgent(AIAgent):
     """
     Goal-Based Agent (Fast Tank).
@@ -239,6 +268,13 @@ class GoalBasedAgent(AIAgent):
             nx, ny = tank_x + dx, tank_y + dy
             # If next tile is brick, shoot it (never detour - spec Page 7)
             if self.grid.get_terrain(nx, ny) == 1: # BRICK
+                if self.tank.ready_to_shoot():
+                    self.tank.shoot()
+            # If eagle is directly ahead, shoot it
+            elif nx == eagle_x and ny == eagle_y:
+                if self.tank.ready_to_shoot():
+                    self.tank.shoot()
+            elif self._can_see_eagle(tank_x, tank_y):
                 if self.tank.ready_to_shoot():
                     self.tank.shoot()
             # If path is clear (Empty/Forest), the movement engine in GameState will handle the step
@@ -361,6 +397,13 @@ class ModelBasedReflexAgent(AIAgent):
         else:
             # No path, move randomly
             self._move_random()
+        
+        # Shoot eagle if in straight line-of-sight or adjacent
+        tank_x, tank_y = self.tank.get_position()
+        eagle_x, eagle_y = eagle_pos
+        if abs(tank_x - eagle_x) + abs(tank_y - eagle_y) <= 1 or self._can_see_eagle(tank_x, tank_y):
+            if self.tank.ready_to_shoot():
+                self.tank.shoot()
 
     def on_wall_destroyed(self, x, y):
         """
@@ -500,11 +543,14 @@ class UtilityAgent(AIAgent):
     def __init__(self, tank, grid, eagle_pos=None):
         super().__init__(tank, grid, eagle_pos)
         self.weights = {
-            'eagle': 2.0,      # High priority to win
-            'player': 1.0,     # Medium priority to engage player
-            'combat': 5.0,     # Very high priority if shot is possible
-            'forest': 0.5      # Slight bonus for hiding
+            'eagle': 8.0,      # Strongly prioritize reaching the eagle
+            'player': 2.0,     # Engage if nearby
+            'combat': 8.0,     # High priority combat opportunity
+            'forest': 1.0,     # Less value on hiding
+            'eagle_los': 6.0   # Bonus when eagle is in line-of-sight
         }
+        # Recent target tiles to avoid cyclic back-and-forth
+        self.recent_positions = deque(maxlen=6)
 
     def decide(self, dt, game_state):
         if not self.tank.alive: return
@@ -515,11 +561,34 @@ class UtilityAgent(AIAgent):
         
         tank_x, tank_y = self.tank.get_position()
         player = game_state.player
+
+        # If currently mid-tile movement, prefer to continue moving in the same direction
+        # This prevents rapid direction flips while move_progress is between 0 and 1
+        if getattr(self.tank, 'move_progress', 0.0) > 0.0:
+            # Allow shooting decisions while moving: prioritize eagle, then player
+            tank_x, tank_y = self.tank.get_position()
+            eagle_x, eagle_y = self.eagle_pos
+            if (abs(tank_x - eagle_x) + abs(tank_y - eagle_y) <= 1) or self._can_see_eagle(tank_x, tank_y):
+                if self.tank.ready_to_shoot():
+                    self.tank.shoot()
+                    return
+            if player and player.alive:
+                if self._can_see(self.tank.x, self.tank.y, player.x, player.y):
+                    if self.tank.ready_to_shoot():
+                        self.tank.shoot()
+            return
         
         for d_name, (dx, dy) in DIRECTIONS.items():
             if d_name == 'NONE': continue
             nx, ny = tank_x + dx, tank_y + dy
-            if not self.grid.is_valid(nx, ny): continue
+            # Use collision detector to ensure move is allowed (handles moving tanks too)
+            try:
+                can_move = game_state.collision_detector.can_tank_move_to(self.tank, nx, ny)
+            except Exception:
+                # Fallback to grid/passable check if collision_detector missing
+                can_move = self.grid.is_valid(nx, ny) and self.grid.is_passable_by_tank(nx, ny)
+            if not can_move:
+                continue
             
             # 1. Eagle Utility (Inverse Manhattan)
             eagle_dist = abs(nx - self.eagle_pos[0]) + abs(ny - self.eagle_pos[1])
@@ -541,6 +610,13 @@ class UtilityAgent(AIAgent):
                 u_stealth = self.weights['forest']
             
             total_utility = u_eagle + u_player + u_stealth
+
+            # Big bonus if the eagle would be in straight LOS from this candidate tile
+            try:
+                if self._can_see_eagle(nx, ny):
+                    total_utility += self.weights.get('eagle_los', 0)
+            except Exception:
+                pass
             
             # Add some randomness to avoid getting stuck
             total_utility += random.uniform(0, 0.1)
@@ -548,12 +624,25 @@ class UtilityAgent(AIAgent):
             if total_utility > max_utility:
                 max_utility = total_utility
                 best_action = d_name
-        
+
+        # Penalize revisiting recent tiles slightly to avoid oscillation
         self.tank.set_direction(best_action)
-        # Check shooting
-        if player and player.alive:
-            if self._can_see(self.tank.x, self.tank.y, player.x, player.y):
+        if best_action and best_action != 'NONE':
+            bdx, bdy = DIRECTIONS.get(best_action, (0, 0))
+            expect_pos = (tank_x + bdx, tank_y + bdy)
+            # Append expected target so future decisions avoid immediate backtracking
+            self.recent_positions.append(expect_pos)
+        
+        # Check shooting: prioritize eagle (adjacent or in LOS), then player
+        tank_x, tank_y = self.tank.get_position()
+        eagle_x, eagle_y = self.eagle_pos
+        if (abs(tank_x - eagle_x) + abs(tank_y - eagle_y) <= 1) or self._can_see_eagle(tank_x, tank_y):
+            if self.tank.ready_to_shoot():
                 self.tank.shoot()
+        elif player and player.alive:
+            if self._can_see(self.tank.x, self.tank.y, player.x, player.y):
+                if self.tank.ready_to_shoot():
+                    self.tank.shoot()
 
     def _can_see(self, x1, y1, x2, y2):
         if x1 == x2:

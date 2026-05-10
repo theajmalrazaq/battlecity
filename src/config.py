@@ -43,8 +43,8 @@ TANK_TYPES = {
     },
     'POWER': {
         'hp': 1,
-        'speed': 2.0,         # Slowed (Original 2.5)
-        'fire_rate': 1.0,     # Fast firing
+        'speed': 2.0,         # Restored original speed
+        'fire_rate': 0.6,     # Much faster firing (more lethal)
         'color': (255, 50, 255), # Magenta/Purple for Power tanks
         'ai_type': 'utility_based'
     },

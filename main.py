@@ -74,8 +74,25 @@ class BattleCityGame:
             def load_scaled(name, size=(TILE_SIZE, TILE_SIZE)):
                 path = os.path.join(asset_dir, f"{name}.png")
                 if os.path.exists(path):
-                    # Load as RGBA to respect the deep clean we just did
+                    # Load image with per-pixel alpha if available
                     surf = pygame.image.load(path).convert_alpha()
+
+                    # Auto-mask: if image has no transparent pixels, use the corner color as colorkey
+                    try:
+                        w, h = surf.get_width(), surf.get_height()
+                        corners = [surf.get_at((0, 0)), surf.get_at((w - 1, 0)), surf.get_at((0, h - 1)), surf.get_at((w - 1, h - 1))]
+                        # If any corner already has alpha < 255, assume image has transparency
+                        has_alpha = any(c[3] < 255 for c in corners)
+                    except Exception:
+                        has_alpha = True
+
+                    if not has_alpha:
+                        # Pick the most common corner RGB color as background
+                        corner_rgbs = [c[:3] for c in corners]
+                        bg_color = max(set(corner_rgbs), key=corner_rgbs.count)
+                        surf.set_colorkey(bg_color)
+                        surf = surf.convert_alpha()
+
                     return pygame.transform.scale(surf, size)
                 return None
 
@@ -266,9 +283,9 @@ class BattleCityGame:
         if sprite:
             self.screen.blit(sprite, (rect_x, rect_y))
         else:
-            # Fallback to primitive shapes
+            # Fallback to primitive shapes (larger enemy circles to match sprites)
             x, y = rect_x + TILE_SIZE // 2, rect_y + TILE_SIZE // 2
-            radius = TILE_SIZE // 3 if tank.is_player else TILE_SIZE // 4
+            radius = TILE_SIZE // 3
             pygame.draw.circle(self.screen, tank.color, (x, y), radius)
             if tank.is_player:
                 pygame.draw.circle(self.screen, (255, 255, 0), (x, y), radius + 2, 2)
