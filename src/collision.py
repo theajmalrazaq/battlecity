@@ -23,10 +23,14 @@ class CollisionDetector:
             return False
         
         # Check for other tanks currently occupying the target tile
+        # Use int() to convert float coordinates to tile coordinates
+        target_tile_x = int(target_x)
+        target_tile_y = int(target_y)
+        
         for other_tank in self.tanks:
             if other_tank is tank:
                 continue  # Skip self
-            if other_tank.alive and other_tank.x == target_x and other_tank.y == target_y:
+            if other_tank.alive and int(other_tank.x) == target_tile_x and int(other_tank.y) == target_tile_y:
                 return False  # Tile occupied by another tank
         
         return True

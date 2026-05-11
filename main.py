@@ -44,6 +44,9 @@ class BattleCityGame:
         self.running = True
         self.paused = False
         
+        # Track last pressed direction key to handle multi-key presses
+        self.last_direction_pressed = 'NONE'
+        
         # Sprite assets
         if self.use_graphics:
             self._load_assets()
@@ -61,6 +64,10 @@ class BattleCityGame:
        
             def load_scaled(name, size=(TILE_SIZE, TILE_SIZE)):
                 path = os.path.join(asset_dir, f"{name}.png")
+                # Try .jpg as fallback if .png doesn't exist
+                if not os.path.exists(path):
+                    path = os.path.join(asset_dir, f"{name}.jpg")
+                    
                 if os.path.exists(path):
                   
                     surf = pygame.image.load(path).convert_alpha()
@@ -94,7 +101,9 @@ class BattleCityGame:
             # Load tanks and create rotations
             tank_types = ['player', 'basic', 'fast', 'armor', 'power', 'boss']
             for t_type in tank_types:
-                base = load_scaled(f"tank_{t_type}")
+                # Power tanks are smaller than other tanks (75% size)
+                size = (int(TILE_SIZE * 0.75), int(TILE_SIZE * 0.75)) if t_type == 'power' else (TILE_SIZE, TILE_SIZE)
+                base = load_scaled(f"tank_{t_type}", size=size)
                 if base:
                     # Map directions to rotation angles (assuming base faces UP)
                     # Fixed inversion: UP=base, DOWN=180, LEFT=90, RIGHT=270
@@ -158,15 +167,44 @@ class BattleCityGame:
                 # Shoot on KEY DOWN (edge trigger — catches quick taps)
                 elif not self.paused and event.key in (pygame.K_b, pygame.K_LSHIFT):
                     input_state['shoot'] = True
+                # Track most recently pressed direction
+                elif not self.paused and event.key in (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT):
+                    if event.key == pygame.K_UP:
+                        self.last_direction_pressed = 'UP'
+                    elif event.key == pygame.K_DOWN:
+                        self.last_direction_pressed = 'DOWN'
+                    elif event.key == pygame.K_LEFT:
+                        self.last_direction_pressed = 'LEFT'
+                    elif event.key == pygame.K_RIGHT:
+                        self.last_direction_pressed = 'RIGHT'
         
         if not self.paused:
             keys = pygame.key.get_pressed()
- 
-            new_dir = 'NONE'
-            if keys[pygame.K_UP]: new_dir = 'UP'
-            elif keys[pygame.K_DOWN]: new_dir = 'DOWN'
-            elif keys[pygame.K_LEFT]: new_dir = 'LEFT'
-            elif keys[pygame.K_RIGHT]: new_dir = 'RIGHT'
+            
+            # Check if the last pressed direction is still held
+            direction_map = {
+                'UP': pygame.K_UP,
+                'DOWN': pygame.K_DOWN,
+                'LEFT': pygame.K_LEFT,
+                'RIGHT': pygame.K_RIGHT
+            }
+            
+            if self.last_direction_pressed != 'NONE' and keys[direction_map[self.last_direction_pressed]]:
+                # Last pressed direction is still held
+                new_dir = self.last_direction_pressed
+            else:
+                # Last direction released, check for other pressed keys
+                new_dir = 'NONE'
+                if keys[pygame.K_UP]: new_dir = 'UP'
+                elif keys[pygame.K_DOWN]: new_dir = 'DOWN'
+                elif keys[pygame.K_LEFT]: new_dir = 'LEFT'
+                elif keys[pygame.K_RIGHT]: new_dir = 'RIGHT'
+                
+                # Update last pressed direction
+                if new_dir != 'NONE':
+                    self.last_direction_pressed = new_dir
+                else:
+                    self.last_direction_pressed = 'NONE'
             
             input_state['direction'] = new_dir
             
@@ -260,7 +298,11 @@ class BattleCityGame:
         sprite = self.sprites.get(sprite_key)
         
         if sprite:
-            self.screen.blit(sprite, (rect_x, rect_y))
+            # Center smaller sprites on the tile
+            sprite_rect = sprite.get_rect()
+            offset_x = (TILE_SIZE - sprite_rect.width) // 2
+            offset_y = (TILE_SIZE - sprite_rect.height) // 2
+            self.screen.blit(sprite, (rect_x + offset_x, rect_y + offset_y))
         else:
         
             x, y = rect_x + TILE_SIZE // 2, rect_y + TILE_SIZE // 2

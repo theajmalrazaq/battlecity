@@ -311,7 +311,8 @@ class GameState:
             currently_touching = set()
             for tank in self.tanks:
                 if tank.alive and not tank.is_player:
-                    if tank.x == self.player.x and tank.y == self.player.y:
+                    # Use int() to convert float coordinates to tile coordinates
+                    if int(tank.x) == int(self.player.x) and int(tank.y) == int(self.player.y):
                         currently_touching.add(id(tank))
                         if id(tank) not in self._player_contact_set:
                             # New contact — apply damage once

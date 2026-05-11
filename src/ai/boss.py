@@ -26,7 +26,7 @@ class BossAIEngine:
         self.nodes_explored = 0
         self.nodes_standard = 0
         self.nodes_pruned = 0
-        self.cutoffs = 0  # Alpha-beta pruning cutoffs
+        self.cutoffs = 0 
 
     def decide(self, game_state):
        
@@ -34,7 +34,7 @@ class BossAIEngine:
         self.cutoffs = 0
         self.player_pos = game_state.player.get_position() if game_state.player else None
         
-        # Save original positions (to prevent modification during simulation)
+
         orig_boss_x, orig_boss_y = self.boss_tank.x, self.boss_tank.y
         orig_player_x, orig_player_y = game_state.player.x, game_state.player.y
         
@@ -422,17 +422,16 @@ class BossAgent:
             )
             self.pruning_stats_timer = 0.0
         
-        # PERFORMANCE: Decision cycle buffed to 0.05s for "Twitch" reactions
+        # PERFORMANCE: Decision cycle - increased to 0.15s to reduce jittering
         self.decision_timer = getattr(self, 'decision_timer', 0.0) + dt
-        if self.decision_timer < 0.05:
+        if self.decision_timer < 0.15:
             # Continue current direction but still check reactive shooting
             self._check_shooting(game_state)
             return
         
         self.decision_timer = 0.0
         
-        # --- COMBINED DECISION: use Minimax for both movement and shooting ---
-        # This fixes the "only shooting down" glitch by following the search results
+    
         move_result = self.ai_engine.decide(game_state)
         
         if move_result:
@@ -490,10 +489,7 @@ class BossAgent:
             new_speed = 3.5   # Phase 3: Fast
             new_fire = 0.8    # Phase 3: 1 bullet per 0.8s
         
-       
-        new_phase = max(old_phase, new_phase)
-        
-   
+        # Phase changes dynamically with current HP (not locked to maximum reached)
         self.phase = new_phase
         self.tank.phase = new_phase  
         self.ai_engine.max_depth = new_depth

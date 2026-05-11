@@ -1,7 +1,3 @@
-"""
-Pathfinding Algorithms - BFS, Greedy Best-First, A*
-Phase 2B: Search Algorithms - Module B
-"""
 
 from collections import deque
 import heapq
@@ -9,57 +5,22 @@ from config import A_STAR_COSTS, TERRAIN, GRID_WIDTH, GRID_HEIGHT
 
 
 class Pathfinder:
-    """
-    Base class for pathfinding algorithms.
-    Subclasses implement BFS, Greedy, and A*.
-    """
+    
 
     def __init__(self, grid):
-        """
-        Initialize pathfinder.
-        
-        Args:
-            grid: Grid object with terrain information
-        """
+       
         self.grid = grid
 
     def find_path(self, start, goal):
-        """
-        Find path from start to goal.
-        Must be implemented by subclasses.
-        
-        Args:
-            start: (x, y) tuple
-            goal: (x, y) tuple
-        
-        Returns:
-            List of (x, y) positions from start to goal, or [] if no path
-        """
+       
         raise NotImplementedError
 
 
 class BFSPathfinder(Pathfinder):
-    """
-    Breadth-First Search Pathfinder (Basic Tank).
-    
-    Properties:
-    - Finds shortest path by number of hops
-    - Treats all passable tiles as cost 1
-    - Ignores brick walls (doesn't shoot through them)
-    - Optimal for unweighted grids
-    """
+   
 
     def find_path(self, start, goal):
-        """
-        BFS: Find shortest path (by hops).
-        
-        Args:
-            start: (x, y)
-            goal: (x, y)
-        
-        Returns:
-            Path as list of (x, y), or [] if no path
-        """
+       
         if not self.grid.is_passable_by_tank(start[0], start[1]):
             return []
         
@@ -96,47 +57,19 @@ class BFSPathfinder(Pathfinder):
 
 
 class GreedyBestFirstPathfinder(Pathfinder):
-    """
-    Greedy Best-First Search Pathfinder (Fast Tank).
-    
-    Properties:
-    - Uses only heuristic (Manhattan distance)
-    - No cost awareness (ignores A* costs)
-    - Very fast but NOT optimal
-    - Can get stuck in local minima ⭐ (INTENTIONAL for teaching)
-    
-    This demonstrates why greedy is not optimal.
-    """
+   
 
     def __init__(self, grid):
-        """Initialize greedy pathfinder."""
+        
         super().__init__(grid)
         self.heuristic = self._manhattan_distance
 
     def _manhattan_distance(self, pos, goal):
-        """
-        Manhattan distance heuristic.
-        
-        Args:
-            pos: (x, y)
-            goal: (x, y)
-        
-        Returns:
-            Manhattan distance (|dx| + |dy|)
-        """
+       
         return abs(pos[0] - goal[0]) + abs(pos[1] - goal[1])
 
     def find_path(self, start, goal):
-        """
-        Greedy Best-First: Use only heuristic to guide search.
-        
-        Args:
-            start: (x, y)
-            goal: (x, y)
-        
-        Returns:
-            Path as list of (x, y), or [] if no path
-        """
+       
         if not self.grid.is_passable_by_tank(start[0], start[1]):
             return []
         
