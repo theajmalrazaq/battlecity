@@ -1,8 +1,3 @@
-"""
-Game State & Main Game Loop
-Phase 1E: Game Loop (10-step sequence)
-"""
-
 import time
 from enum import Enum
 from config import (
@@ -20,7 +15,6 @@ from ai.agents import AIAgentFactory
 
 
 class GamePhase(Enum):
-    """Enum for game state."""
     PLAYING = 'playing'
     PAUSED = 'paused'
     LEVEL_WIN = 'level_win'
@@ -28,53 +22,46 @@ class GamePhase(Enum):
 
 
 class GameState:
-    """
-    Represents the complete state of a game session.
-    """
+    
 
     def __init__(self, level=1):
-        """
-        Initialize a new game.
         
-        Args:
-            level: Level number (1, 2, or 'BOSS')
-        """
         self.level = level
         self.phase = GamePhase.PLAYING
         self.level_config = LEVEL_CONFIG.get(level, LEVEL_CONFIG[1])
         
         # Core systems
         self.grid = Grid()
-        self.tanks = []  # All tanks (player + enemies)
+        self.tanks = []  
         self.bullets = BulletManager()
-        self.ai_agents = {}  # Tank -> AIAgent mapping
+        self.ai_agents = {} 
         self.collision_detector = CollisionDetector(
             self.grid, self.tanks, self.bullets, EAGLE_POSITION
         )
         
-        # Generate level using CSP
+     
         level_gen = LevelGenerator(level)
         level_data = level_gen.generate()
         
         if level_data is None:
             print(f"ERROR: Failed to generate level {level}")
             self.enemy_pool = []
-            # Prevent instant win from empty pool — mark as game over with error
+           
             self.phase = GamePhase.GAME_OVER
         else:
-            # Load generated map into grid
+  
             for y in range(len(level_data['map'])):
                 for x in range(len(level_data['map'][y])):
                     self.grid.set_terrain(x, y, level_data['map'][y][x])
             
-            # Set enemy pool
+          
             self.enemy_pool = level_data['enemy_pool'][:]
         
         # Game time
         self.elapsed_time = 0.0
         self.tick_count = 0
         
-        # Events log (for debugging/replay)
+   
         self.events = []
         
         # Player
@@ -85,19 +72,18 @@ class GameState:
         self.active_enemies = 0
         self.enemies_defeated = 0
         self.last_spawn_time = 0.0
-        self._player_contact_set = set()  # Tracks enemies currently touching player (BUG 6 fix)
+        self._player_contact_set = set() 
         
-        # Spawn boss immediately if boss level (before player so boss is at correct location)
+       
         if self.level == 'BOSS' and self.enemy_pool:
             boss_type = self.enemy_pool.pop(0)
-            # Pre-spawn boss at (13, 7) before player, so player doesn't collide
-            self.active_enemies = 0  # Reset counter before spawning
-            boss = self.spawn_enemy(boss_type)  # Spawn boss at (13, 7)
+      
+            self.active_enemies = 0 
+            boss = self.spawn_enemy(boss_type)
         
-        # Now spawn player (will be at 13, 18 for boss level, which is clear)
-        self.spawn_player()  # Spawn player at start
-        # spawn_player() reassigns self.tanks (list comprehension at line 128)
-        # → collision_detector.tanks still points to the old list → sync it now
+
+        self.spawn_player()  
+     
         self.collision_detector.tanks = self.tanks
 
     def add_event(self, event_type, data):
@@ -203,26 +189,37 @@ class GameState:
         self.last_spawn_time += dt
         if self.last_spawn_time >= SPAWN_DELAY:
             if self.enemy_pool and self.active_enemies < self.level_config['max_active']:
-                # Level 1 kill-gating: Fast tanks only spawn after 10 kills
+                # Level 1 kill-gating: Fast tanks only spawn after 7 kills (all BASIC defeated)
                 next_type = self.enemy_pool[0]
                 next_type_str = next_type.value if hasattr(next_type, 'value') else str(next_type)
-                if self.level == 1 and next_type_str == 'FAST' and self.enemies_defeated < 10:
+                if self.level == 1 and next_type_str == 'FAST' and self.enemies_defeated < 7:
                     return # Wait for more kills
                 
-                # CHOOSE POINT FIRST
-                from config import SPAWN_POINTS
-                spawn_point = random.choice(SPAWN_POINTS)
-                
-                # CHECK IF CLEAR
-                is_clear = True
-                for t in self.tanks:
-                    if t.alive and abs(t.x - spawn_point[0]) < 1 and abs(t.y - spawn_point[1]) < 1:
-                        is_clear = False
+                # Try spawn points in random order and pick the first one that's fair and clear
+                from config import SPAWN_POINTS, SPAWN_FAIRNESS_DISTANCE
+                chosen = None
+                for spawn_point in random.sample(SPAWN_POINTS, len(SPAWN_POINTS)):
+                    sx, sy = spawn_point
+                    # Fairness: don't spawn within SPAWN_FAIRNESS_DISTANCE of player
+                    if self.player and self.level != 'BOSS':
+                        dist = abs(sx - self.player.x) + abs(sy - self.player.y)
+                        if dist < SPAWN_FAIRNESS_DISTANCE:
+                            continue
+
+                    # Check if clear (no tank occupies the spawn tile)
+                    is_clear = True
+                    for t in self.tanks:
+                        if t.alive and int(t.x) == sx and int(t.y) == sy:
+                            is_clear = False
+                            break
+
+                    if is_clear:
+                        chosen = spawn_point
                         break
-                
-                if is_clear:
+
+                if chosen:
                     tank_type = self.enemy_pool.pop(0)
-                    self.spawn_enemy(tank_type, x=spawn_point[0], y=spawn_point[1])
+                    self.spawn_enemy(tank_type, x=chosen[0], y=chosen[1])
                     self.last_spawn_time = 0.0
 
     def update_player_input(self, input_state):
@@ -292,7 +289,7 @@ class GameState:
                 if self.collision_detector.can_tank_move_to(tank, next_x, next_y):
                     tank.move_progress += tank.speed * dt
                 else:
-                    tank.move_progress = 0.0 # Stop immediately if blocked
+                    tank.move_progress = 0.0  # Stop immediately if blocked
                 
                 # Check if we've accumulated enough progress for a full tile move
                 while tank.move_progress >= 1.0:
@@ -314,7 +311,8 @@ class GameState:
             currently_touching = set()
             for tank in self.tanks:
                 if tank.alive and not tank.is_player:
-                    if tank.x == self.player.x and tank.y == self.player.y:
+                    # Use int() to convert float coordinates to tile coordinates
+                    if int(tank.x) == int(self.player.x) and int(tank.y) == int(self.player.y):
                         currently_touching.add(id(tank))
                         if id(tank) not in self._player_contact_set:
                             # New contact — apply damage once

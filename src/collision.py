@@ -7,69 +7,36 @@ from config import TERRAIN
 
 
 class CollisionDetector:
-    """
-    Handles all collision checks in the game.
-    - Tank vs terrain
-    - Tank vs tank
-    - Bullet vs terrain
-    - Bullet vs tank
-    - Bullet vs bullet
-    """
+  
 
     def __init__(self, grid, tanks, bullets, eagle_pos):
-        """
-        Initialize collision detector.
         
-        Args:
-            grid: Grid object
-            tanks: List of all tank objects
-            bullets: BulletManager object
-            eagle_pos: (x, y) position of the Eagle/base
-        """
         self.grid = grid
         self.tanks = tanks
         self.bullets = bullets
         self.eagle_pos = eagle_pos
 
     def can_tank_move_to(self, tank, target_x, target_y):
-        """
-        Check if a tank can move to a target tile.
-        
-        Rules:
-        - Terrain must be passable (EMPTY or FOREST)
-        - No other tank occupies the tile
-        
-        Args:
-            tank: Tank object
-            target_x, target_y: Destination tile
-        
-        Returns:
-            True if move is allowed, False otherwise
-        """
+      
         # Check terrain
         if not self.grid.is_passable_by_tank(target_x, target_y):
             return False
         
-        # Check for other tanks
+        # Check for other tanks currently occupying the target tile
+        # Use int() to convert float coordinates to tile coordinates
+        target_tile_x = int(target_x)
+        target_tile_y = int(target_y)
+        
         for other_tank in self.tanks:
             if other_tank is tank:
                 continue  # Skip self
-            if other_tank.alive and other_tank.x == target_x and other_tank.y == target_y:
-                return False  # Occupied by another tank
+            if other_tank.alive and int(other_tank.x) == target_tile_x and int(other_tank.y) == target_tile_y:
+                return False  # Tile occupied by another tank
         
         return True
 
     def check_bullet_vs_terrain(self, bullet):
-        """
-        Check if a bullet hits a terrain tile.
-        
-        Returns:
-            'brick' if hits brick wall (destroyed)
-            'steel' if hits steel wall (bullet destroyed)
-            'water' if hits water (bullet destroyed)
-            'eagle' if hits eagle (game over)
-            None if no collision
-        """
+      
         bx, by = bullet.get_tile_position()
         
         # Check bounds
@@ -90,15 +57,7 @@ class CollisionDetector:
         return None
 
     def check_bullet_vs_tank(self, bullet):
-        """
-        Check if a bullet hits a tank.
-        
-        Args:
-            bullet: Bullet object
-        
-        Returns:
-            Tank object if hit, None otherwise
-        """
+       
         bx, by = bullet.get_tile_position()
         
         for tank in self.tanks:
@@ -112,29 +71,14 @@ class CollisionDetector:
         return None
 
     def check_bullet_vs_bullet(self, bullet1, bullet2):
-        """
-        Check if two bullets collide mid-air.
-        
-        Returns:
-            True if they occupy same tile, False otherwise
-        """
+      
         b1x, b1y = bullet1.get_tile_position()
         b2x, b2y = bullet2.get_tile_position()
         
         return b1x == b2x and b1y == b2y
 
     def check_all_bullet_collisions(self):
-        """
-        Check all bullet collisions and return collision events.
-        
-        Returns:
-            List of collision events: {
-                'type': 'terrain'|'tank'|'bullet'|'eagle',
-                'bullet': bullet,
-                'target': tank or 'brick'|'steel'|'water',
-                'action': 'destroy_brick'|'destroy_bullet'|'destroy_both'
-            }
-        """
+      
         events = []
         active_bullets = self.bullets.get_active_bullets()
         
@@ -192,15 +136,7 @@ class CollisionDetector:
         return events
 
     def resolve_collision(self, event):
-        """
-        Resolve a collision event and apply game effects.
-        
-        Args:
-            event: Collision event dict
-        
-        Returns:
-            Dict with results: {'destroyed_bullet': bool, 'destroyed_tank': bool, etc}
-        """
+       
         result = {}
         
         if event['type'] == 'terrain':

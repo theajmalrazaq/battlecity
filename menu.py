@@ -8,6 +8,7 @@ try:
     import pygame
     PYGAME_AVAILABLE = True
 except ImportError:
+    pygame = None
     PYGAME_AVAILABLE = False
 
 import sys

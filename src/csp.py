@@ -1,12 +1,4 @@
-"""
-Constraint Satisfaction Problem (CSP) Solver with Forward Checking & MRV
-Phase 2A: Map Generation - Module A
 
-Optimization Techniques:
-- Forward Checking: Prune domains after each assignment
-- MRV (Minimum Remaining Values): Select variable with smallest domain
-- Arc Consistency: Ensure constraints are locally satisfied
-"""
 
 import random
 from collections import deque
@@ -14,16 +6,7 @@ from config import TERRAIN, GRID_WIDTH, GRID_HEIGHT
 
 
 class CSPMapGenerator:
-    """
-    Generates valid Battle City maps using Constraint Satisfaction with optimizations.
-    
-    5 Constraints (from document):
-    1. Base Safety: Eagle surrounded by ≥1 ring of brick/steel
-    2. Reachability: Valid BFS path from every spawn to eagle
-    3. Fairness: No spawn within 10 tiles of player
-    4. Density Balance: Max 40% wall tiles
-    5. Water Placement: Water can't block only path to eagle
-    """
+  
 
     def __init__(self, level=1, seed=None):
         """Initialize CSP generator."""
@@ -67,21 +50,7 @@ class CSPMapGenerator:
                     }
 
     def generate(self, max_attempts=200):
-        """
-        Generate map using Randomized CSP with constraint-guided domain selection.
-        
-        Strategy: Hybrid approach
-        1. Initialize grid with fixed positions
-        2. Fill remaining tiles with random selection from constrained domains
-        3. Use forward checking to maintain constraint satisfaction probability
-        4. Validate all 5 constraints on complete assignment
-        
-        Args:
-            max_attempts: Number of generation attempts (increased for strict constraints)
-        
-        Returns:
-            Grid if successful, None if failed
-        """
+       
         for attempt in range(max_attempts):
             # Reset and initialize
             self._initialize_domains()
@@ -105,19 +74,7 @@ class CSPMapGenerator:
         return None
 
     def _generate_with_constraints(self):
-        """
-        Fill unassigned tiles with constraint-enforcing assignments.
-        
-        Strategy:
-        1. Place protection around eagle (brick/steel)
-        2. Ensure reachability by limiting blocking obstacles
-        3. Limit water to avoid blocking paths completely
-        4. Respect density constraints
-        
-        Returns:
-            True if generation completed successfully
-        """
-        # Step 1: Place protective rings around eagle
+      
         eagle_x, eagle_y = self.eagle_pos
         
         cardinal_neighbors = [(0, -1), (0, 1), (-1, 0), (1, 0)]
@@ -231,12 +188,7 @@ class CSPMapGenerator:
 
 
     def _check_all_constraints(self):
-        """
-        Check all 5 constraints on complete assignment.
-        
-        Returns:
-            True if all constraints satisfied, False otherwise
-        """
+       
         # Constraint 1: Base Safety - Eagle surrounded by ≥1 ring of brick/steel
         if not self._check_base_safety():
             return False
@@ -260,14 +212,7 @@ class CSPMapGenerator:
         return True
 
     def _check_base_safety(self):
-        """
-        Constraint 1: Eagle surrounded by protective brick/steel.
-        
-        Level 1 (PDF spec): 2-layer protection required:
-          - Inner ring: At least 2 of the 8 immediate neighbors are brick/steel
-          - Outer ring: At least 2 of the 2-tile distance tiles are brick/steel
-        Other levels: At least 1 of the 8 neighbors must be brick/steel.
-        """
+       
         eagle_x, eagle_y = self.eagle_pos
         
         # Count inner ring (distance 1) protection
@@ -339,7 +284,7 @@ class CSPMapGenerator:
         return False
 
     def _check_fairness(self):
-        """Constraint 3: No spawn within fairness_distance of player."""
+       
         player_x, player_y = self.player_spawn
         
         for spawn_x, spawn_y in self.spawn_points:
@@ -350,10 +295,7 @@ class CSPMapGenerator:
         return True
 
     def _check_density_constraint(self):
-        """
-        Constraint 4: Max 40% of tiles are walls (brick+steel+water).
-        Min 60% must be passable (empty, forest, eagle).
-        """
+        
         wall_count = 0
         total_count = 0
         
@@ -376,7 +318,7 @@ class CSPMapGenerator:
         return wall_ratio <= 0.40  # Strict: max 40% walls
 
     def _check_water_placement(self):
-        """Constraint 5: Water can't block the only path to eagle."""
+       
         eagle_x, eagle_y = self.eagle_pos
         
         # Check if at least one spawn can reach eagle
@@ -387,5 +329,5 @@ class CSPMapGenerator:
         return False
 
     def get_grid_state(self):
-        """Return generated grid."""
+       
         return [row[:] for row in self.grid]
