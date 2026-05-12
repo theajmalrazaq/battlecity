@@ -163,20 +163,7 @@ class SimpleReflexAgent(AIAgent):
         self.tank.set_direction(direction)
 
 class GoalBasedAgent(AIAgent):
-    """
-    Goal-Based Agent (Fast Tank).
-    
-    Agent Model: Goal-Based (explicit goal, ignores other considerations)
-    Search Algorithm: Greedy Best-First
-    Behavior: Rushes toward eagle ignoring player, may get stuck
-    
-    Rules:
-    1. Goal: Destroy the eagle (ignore player completely)
-    2. Always move toward tile minimizing Manhattan distance to eagle
-    3. If next tile is brick, shoot to clear path (never detour)
-    
-    Note: Greedy getting stuck in local minima is INTENTIONAL (teaches why greedy fails).
-    """
+   
 
     def __init__(self, tank, grid, eagle_pos=None):
         """Initialize goal-based agent."""
@@ -184,13 +171,7 @@ class GoalBasedAgent(AIAgent):
         self.pathfinder = PathfindingFactory.create_pathfinder('FAST', grid)
 
     def decide(self, dt, game_state):
-        """
-        Make decision using Greedy Best-First (heuristic only).
         
-        Args:
-            dt: Delta time
-            game_state: GameState object
-        """
         if not self.tank.alive:
             return
         
@@ -245,22 +226,7 @@ class GoalBasedAgent(AIAgent):
 
 
 class ModelBasedReflexAgent(AIAgent):
-    """
-    Model-Based Reflex Agent (Armor Tank).
-    
-    Agent Model: Model-Based Reflex (maintains internal state)
-    Search Algorithm: A* Search
-    Behavior: Move toward eagle, retreat on 3rd hit, recover
-    
-    State Variable: hit_count (0-3) - tracks damage
-    
-    Rules:
-    1. (0-2 hits): Navigate to eagle via A*, shoot if player in LOS
-    2. (3rd hit): RETREAT - find nearest steel wall and hide
-    3. (after retreat): Wait 2 seconds, re-compute A* path
-    
-    Key: A* recognizes shooting through brick is cheaper than detouring.
-    """
+   
 
     def __init__(self, tank, grid, eagle_pos=None):
         """Initialize model-based reflex agent."""
@@ -276,13 +242,7 @@ class ModelBasedReflexAgent(AIAgent):
         self.tank.ai_state['retreat_target'] = None
 
     def decide(self, dt, game_state):
-        """
-        Make decision based on hit count (state).
-        
-        Args:
-            dt: Delta time
-            game_state: GameState object
-        """
+       
         if not self.tank.alive:
             return
         
@@ -311,9 +271,7 @@ class ModelBasedReflexAgent(AIAgent):
         return False
 
     def _attack_mode(self, dt, game_state):
-        """
-        Attack mode: Move toward eagle via A*, shoot if possible.
-        """
+       
         # Get eagle position from game state
         eagle_pos = game_state.grid.eagle_pos if hasattr(game_state.grid, 'eagle_pos') else (12, 24)
         
@@ -361,20 +319,13 @@ class ModelBasedReflexAgent(AIAgent):
                 self.tank.shoot()
 
     def on_wall_destroyed(self, x, y):
-        """
-        Called by game engine when any wall is destroyed.
-        If the destroyed tile was on our A* path, invalidate and re-run immediately.
-        Per spec: 'Re-run A* whenever a wall in the current path is destroyed (map change event).'
-        Key insight: destroyed brick may open a SHORTER path — A* should find it.
-        """
+       
         if self.current_path and (x, y) in self.current_path:
             self.current_path = []
             self.last_a_star_time = self.a_star_interval  # Force immediate recompute next tick
 
     def _retreat_mode(self, dt, game_state):
-        """
-        Retreat mode: Find nearest steel wall and hide.
-        """
+       
         retreat_time = self.tank.ai_state.get('retreat_time', 0.0)
         retreat_target = self.tank.ai_state.get('retreat_target', None)
         
@@ -400,12 +351,7 @@ class ModelBasedReflexAgent(AIAgent):
             self.tank.ai_state['hit_count'] = 0  # Reset to 0 (not 2) to exit retreat mode
 
     def _find_nearest_steel_wall(self, grid):
-        """
-        Find the nearest steel wall using BFS.
-        
-        Returns:
-            Position (x, y) of nearest steel wall, or None
-        """
+       
         from collections import deque
         
         tank_x, tank_y = self.tank.get_position()
@@ -486,15 +432,7 @@ class ModelBasedReflexAgent(AIAgent):
 
 
 class UtilityAgent(AIAgent):
-    """
-    Utility-Based Agent (Power Tank).
     
-    Agent Model: Utility-Based (calculates score for each action)
-    Search Algorithm: Utility Evaluation
-    Behavior: Complex decision making, balances eagle and player threats
-    
-    Utility(action) = w1*EagleDist + w2*PlayerDist + w3*CombatPot + w4*Stealth
-    """
     def __init__(self, tank, grid, eagle_pos=None):
         super().__init__(tank, grid, eagle_pos)
         self.weights = {
@@ -642,22 +580,11 @@ class UtilityAgent(AIAgent):
 
 
 class AIAgentFactory:
-    """Factory to create appropriate agent for a tank type."""
+   
 
     @staticmethod
     def create_agent(tank, grid, tank_type=None, eagle_pos=None):
-        """
-        Create AI agent for tank.
-        
-        Args:
-            tank: Tank object
-            grid: Grid object
-            tank_type: 'BASIC', 'FAST', 'ARMOR', 'BOSS' (defaults to tank.tank_type)
-            eagle_pos: Position of eagle (default 12, 24)
-        
-        Returns:
-            Appropriate AIAgent subclass instance
-        """
+       
         if tank_type is None:
             tank_type = tank.tank_type.value
         

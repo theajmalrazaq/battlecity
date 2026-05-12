@@ -104,19 +104,18 @@ class GameState:
         """
         if x is None:
             if self.level == 'BOSS':
-                # Boss arena is at x:7-18, y:7-18 (12x12 centered in 26x26 grid).
-                # Player spawns at the bottom of the arena facing the boss at the top.
+               
                 x, y = 13, 18
             else:
                 x, y = PLAYER_SPAWN
         
-        # Only create new player if we don't have one, or clear the old one
+
         if self.player and self.player.alive:
-            self.player.alive = False  # Mark old player as dead
+            self.player.alive = False  
         
         self.player = Tank(TankType.PLAYER, x, y, is_player=True)
         
-        # Remove dead players from tanks list before adding new one
+
         self.tanks = [t for t in self.tanks if t.alive or t == self.player]
         
         if self.player not in self.tanks:
@@ -238,6 +237,9 @@ class GameState:
         # Update direction
         if direction in DIRECTIONS:
             if direction != 'NONE':
+                # FIX: Reset move_progress when direction changes to prevent overshoot
+                if self.player.direction_name != direction:
+                    self.player.move_progress = 0.0
                 self.player.set_direction(direction)
             elif self.player.move_progress == 0.0:
                 # Only stop if we've reached a grid intersection
@@ -317,12 +319,10 @@ class GameState:
                         if id(tank) not in self._player_contact_set:
                             # New contact — apply damage once
                             self.player.take_damage(1)
-            # Clear contacts that are no longer overlapping
+        
             self._player_contact_set = currently_touching
         
-        # Check for enemy tank reaching the player's eagle (game over)
-        # Note: The eagle is the PLAYER'S base — only enemies reaching it matters.
-        #       The player standing on their own eagle tile does nothing.
+
         for tank in self.tanks:
             if tank.alive and not tank.is_player:
                 terrain_at_tank = self.grid.get_terrain(int(tank.x), int(tank.y))
@@ -340,13 +340,11 @@ class GameState:
             if tank.has_bullet:  # Tank fired this tick
                 bullet = self.bullets.spawn_bullet(tank)
         
-        # STEP 5: BULLET UPDATE - All active bullets advance one tile
         self.bullets.update_bullets(dt)
-        
-        # STEP 6: COLLISION DETECTION - Check all collisions
+      
         collision_events = self.collision_detector.check_all_bullet_collisions()
         
-        # STEP 7: STATE UPDATE - Destroy walls, reduce tank HP, remove dead tanks
+       
         for event in collision_events:
             result = self.collision_detector.resolve_collision(event)
             
@@ -404,11 +402,7 @@ class GameState:
         
         # STEP 8: SPAWN CHECK - If fewer than 4 enemies active, spawn next
         self.check_spawn(dt)
-        
-        # STEP 9: RENDER - (Handled by UI/graphics layer, not here)
-        
-        # STEP 10: WIN/LOSE CHECK
-        # Win when enemy pool is exhausted AND no active enemies remain
+    
         if not self.enemy_pool and self.active_enemies == 0:
             self.phase = GamePhase.LEVEL_WIN
             self.add_event('level_complete', {'level': self.level})
