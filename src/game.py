@@ -237,8 +237,11 @@ class GameState:
         # Update direction
         if direction in DIRECTIONS:
             if direction != 'NONE':
-                # FIX: Reset move_progress when direction changes to prevent overshoot
+                # FIX: Snap to current tile when direction changes (use floor, not round)
                 if self.player.direction_name != direction:
+                    # Snap to the current integer tile (floor, not round, to avoid overshoot)
+                    self.player.x = int(self.player.x)
+                    self.player.y = int(self.player.y)
                     self.player.move_progress = 0.0
                 self.player.set_direction(direction)
             elif self.player.move_progress == 0.0:
