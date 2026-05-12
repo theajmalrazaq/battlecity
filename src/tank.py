@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Any
 from config import TANK_TYPES, DIRECTIONS, TERRAIN
 
 
@@ -37,7 +38,7 @@ class Tank:
     fire_cooldown: float
     is_player: bool
     ai_type: str
-    sprite: any
+    sprite: Any
 
     def __init__(self, tank_type, x, y, is_player=False):
         
