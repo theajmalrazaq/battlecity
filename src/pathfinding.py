@@ -189,24 +189,38 @@ class AStarPathfinder(Pathfinder):
         if not self.grid.is_valid(start[0], start[1]):
             return []
         
-        # Priority queue: (f, counter, pos, path, g_cost)
+        # Priority queue: (f, counter, pos)
+        # Separated path tracking to avoid type comparison issues with lists
         counter = 0
         g_start = 0
         h_start = self._manhattan_distance(start, goal)
         
-        pq = [(g_start + h_start, counter, start, [start], g_start)]
+        pq = [(g_start + h_start, counter, start)]
         visited = {}  # pos -> best g_cost
+        parent = {}  # pos -> (parent_pos, cost_to_get_here)
         
         while pq:
-            f, _, (x, y), path, g_cost = heapq.heappop(pq)
+            f, _, (x, y) = heapq.heappop(pq)
             
             # Skip if we've already visited this with better cost
-            if (x, y) in visited and visited[(x, y)] <= g_cost:
+            if (x, y) in visited:
                 continue
-            visited[(x, y)] = g_cost
+            visited[(x, y)] = True
             
             if (x, y) == goal:
-                return path
+                # Reconstruct path from parent pointers
+                path = []
+                current = goal
+                while current in parent:
+                    path.append(current)
+                    current = parent[current][0]
+                path.append(start)
+                return list(reversed(path))
+            
+            # Get g cost from parent tracking
+            current_g = 0
+            if (x, y) in parent:
+                current_g = parent[(x, y)][1]
             
             # Explore 4 neighbors
             for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
@@ -215,12 +229,17 @@ class AStarPathfinder(Pathfinder):
                 if not self.grid.is_valid(nx, ny):
                     continue
                 
+                if (nx, ny) in visited:
+                    continue
+                
                 # Always allow reaching the goal tile (BUG 3 fix)
                 if (nx, ny) == goal:
-                    new_g = g_cost + 1  # Cost=1 to step onto goal
-                    if (nx, ny) not in visited or visited[(nx, ny)] > new_g:
-                        counter += 1
-                        heapq.heappush(pq, (new_g, counter, (nx, ny), path + [(nx, ny)], new_g))
+                    new_g = current_g + 1
+                    parent[(nx, ny)] = ((x, y), new_g)
+                    counter += 1
+                    h = self._manhattan_distance((nx, ny), goal)
+                    f = new_g + h
+                    heapq.heappush(pq, (f, counter, (nx, ny)))
                     continue
                 
                 # Get tile cost
@@ -231,19 +250,19 @@ class AStarPathfinder(Pathfinder):
                     continue
                 
                 # Calculate new g cost
-                new_g = g_cost + move_cost
+                new_g = current_g + move_cost
                 
-                # Skip if we've visited this with better cost
-                if (nx, ny) in visited and visited[(nx, ny)] <= new_g:
-                    continue
-                
-                # Calculate f = g + h
-                h = self._manhattan_distance((nx, ny), goal)
-                f = new_g + h
-                
-                # Add to priority queue
-                counter += 1
-                heapq.heappush(pq, (f, counter, (nx, ny), path + [(nx, ny)], new_g))
+                # Only add if not visited or if we found a better path
+                if (nx, ny) not in parent or parent[(nx, ny)][1] > new_g:
+                    parent[(nx, ny)] = ((x, y), new_g)
+                    
+                    # Calculate f = g + h
+                    h = self._manhattan_distance((nx, ny), goal)
+                    f = new_g + h
+                    
+                    # Add to priority queue
+                    counter += 1
+                    heapq.heappush(pq, (f, counter, (nx, ny)))
         
         return []  # No path found
 
