@@ -67,9 +67,9 @@ class BulletManager:
 
     def spawn_bullet(self, tank):
        
-        # Create bullet slightly ahead of tank's position for better visibility
-        # Note: tank.shoot() already called in update_player_input(),
-        # has_bullet flag signals that a bullet should be spawned this tick
+        # Create bullet ahead of tank's position for visibility
+        # Spawn 0.5 tiles ahead so it appears in front of the tank
+        # Collision detection checks both current and next tile to catch bricks immediately
         spawn_x = tank.x + tank.direction[0] * 0.5
         spawn_y = tank.y + tank.direction[1] * 0.5
         bullet = Bullet(spawn_x, spawn_y, tank.direction, tank)
@@ -90,9 +90,9 @@ class BulletManager:
                     bx, by = int(bullet.x), int(bullet.y)
                     if bx < 0 or bx >= 26 or by < 0 or by >= 26:
                         bullet.destroy()
-                        if bullet in self.bullets: self.bullets.remove(bullet)
-                elif bullet in self.bullets:
-                    self.bullets.remove(bullet)
+            
+            # Clean up dead bullets after each sub-step
+            self.bullets = [b for b in self.bullets if b.alive]
 
     def destroy_bullet(self, bullet):
         """Remove a bullet from play."""
