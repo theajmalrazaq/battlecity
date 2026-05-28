@@ -73,51 +73,78 @@ class MainMenu:
         return False
     
     def render(self):
-        """Render menu."""
-        self.screen.fill((20, 20, 30))
+        """Render menu with modern styling."""
+        # Modern gradient-inspired background
+        self.screen.fill((10, 15, 25))
         
-        # Title
-        title_font = pygame.font.Font(None, 72)
-        title = title_font.render("BATTLE CITY", True, (255, 200, 50))
-        self.screen.blit(title, (self.WIDTH // 2 - 250, 50))
+        # Draw subtle background pattern
+        for y in range(0, self.HEIGHT, 40):
+            pygame.draw.line(self.screen, (25, 35, 50), (0, y), (self.WIDTH, y), 1)
         
-        subtitle_font = pygame.font.Font(None, 36)
-        subtitle = subtitle_font.render("Level Select", True, (150, 150, 200))
-        self.screen.blit(subtitle, (self.WIDTH // 2 - 140, 140))
+        # Title with modern styling
+        title_font = pygame.font.Font(None, 80)
+        title = title_font.render("BATTLE CITY", True, (100, 200, 255))
+        title_rect = title.get_rect(center=(self.WIDTH // 2, 60))
+        # Add subtle shadow effect
+        shadow = title_font.render("BATTLE CITY", True, (0, 0, 0))
+        self.screen.blit(shadow, (title_rect.x + 3, title_rect.y + 3))
+        self.screen.blit(title, title_rect)
+        
+        # Subtitle
+        subtitle_font = pygame.font.Font(None, 28)
+        subtitle = subtitle_font.render("SELECT LEVEL", True, (150, 180, 220))
+        subtitle_rect = subtitle.get_rect(center=(self.WIDTH // 2, 130))
+        self.screen.blit(subtitle, subtitle_rect)
+        
+        # Decorative line
+        pygame.draw.line(self.screen, (100, 200, 255), (self.WIDTH // 2 - 100, 150), (self.WIDTH // 2 + 100, 150), 2)
         
         # Level options
-        option_font = pygame.font.Font(None, 32)
-        desc_font = pygame.font.Font(None, 20)
+        option_font = pygame.font.Font(None, 28)
+        desc_font = pygame.font.Font(None, 18)
         
-        y_offset = 250
+        y_offset = 210
         for i, level in enumerate(self.levels):
-            if i == self.selected:
-                # Highlight selected
-                color = (255, 255, 50)
-                pygame.draw.rect(self.screen, (100, 100, 0), 
-                               (50, y_offset - 10, self.WIDTH - 100, 80))
-            else:
-                color = (200, 200, 200)
+            is_selected = i == self.selected
+            
+            # Modern card-style background
+            card_height = 80
+            card_y = y_offset - 10
+            card_color = (40, 60, 90) if is_selected else (25, 40, 65)
+            pygame.draw.rect(self.screen, card_color, (40, card_y, self.WIDTH - 80, card_height))
+            
+            # Selected card border
+            if is_selected:
+                pygame.draw.rect(self.screen, (100, 200, 255), (40, card_y, self.WIDTH - 80, card_height), 3)
+            
+            # Text color
+            color = (255, 255, 255) if is_selected else (180, 200, 220)
             
             # Level icon
             icon = self.icons.get(level['icon'])
             if icon:
-                self.screen.blit(icon, (80, y_offset - 5))
+                self.screen.blit(icon, (60, card_y + 10))
             
             # Level name
             text = option_font.render(str(level['name']), True, color)
-            self.screen.blit(text, (160, y_offset))
+            self.screen.blit(text, (140, card_y + 8))
             
             # Description
-            desc_text = desc_font.render(str(level['desc']), True, (150, 150, 150))
-            self.screen.blit(desc_text, (160, y_offset + 35))
+            desc_color = (200, 220, 240) if is_selected else (130, 150, 180)
+            desc_text = desc_font.render(str(level['desc']), True, desc_color)
+            self.screen.blit(desc_text, (140, card_y + 40))
             
-            y_offset += 100
+            y_offset += 90
         
-        # Instructions
-        inst_font = pygame.font.Font(None, 20)
-        inst1 = inst_font.render("UP/DOWN: Select | ENTER: Play | ESC: Quit", True, (100, 200, 100))
-        self.screen.blit(inst1, (self.WIDTH // 2 - 200, self.HEIGHT - 50))
+        # Bottom instructions with modern styling
+        inst_font = pygame.font.Font(None, 18)
+        inst_box_y = self.HEIGHT - 55
+        pygame.draw.rect(self.screen, (20, 30, 50), (0, inst_box_y, self.WIDTH, 55))
+        pygame.draw.line(self.screen, (100, 200, 255), (0, inst_box_y), (self.WIDTH, inst_box_y), 1)
+        
+        inst1 = inst_font.render("↑ ↓  Select  |  ENTER  Play  |  ESC  Quit", True, (150, 200, 255))
+        inst_rect = inst1.get_rect(center=(self.WIDTH // 2, inst_box_y + 27))
+        self.screen.blit(inst1, inst_rect)
         
         pygame.display.flip()
     

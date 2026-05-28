@@ -223,7 +223,9 @@ class GameState:
 
     def update_player_input(self, input_state):
         """
-        Handle player input.
+        Handle player input with smooth direction changes.
+        Queue direction changes immediately to feel responsive.
+        Tank retains last facing direction when stopped for shooting.
         
         Args:
             input_state: Dict with keys 'direction' and 'shoot'
@@ -234,19 +236,15 @@ class GameState:
         direction = input_state.get('direction', 'NONE')
         shoot = input_state.get('shoot', False)
         
-        # Update direction
-        if direction in DIRECTIONS:
-            if direction != 'NONE':
-                # FIX: Snap to current tile when direction changes (use floor, not round)
-                if self.player.direction_name != direction:
-                    # Snap to the current integer tile (floor, not round, to avoid overshoot)
-                    self.player.x = int(self.player.x)
-                    self.player.y = int(self.player.y)
-                    self.player.move_progress = 0.0
-                self.player.set_direction(direction)
-            elif self.player.move_progress == 0.0:
-                # Only stop if we've reached a grid intersection
-                self.player.set_direction('NONE')
+        # Validate direction
+        if direction not in DIRECTIONS:
+            direction = 'NONE'
+        
+        # Track if tank should move or stop
+        if direction != 'NONE':
+            # Set new direction for movement AND facing
+            self.player.set_direction(direction)
+        # If NONE, don't change direction - tank keeps facing last direction but stops moving
         
         # Queue shot if requested
         if shoot and self.player.ready_to_shoot():
@@ -284,31 +282,34 @@ class GameState:
             if not tank.alive:
                 continue
             
-            if tank.direction_name != 'NONE':
-                # ALL TANKS: use smooth time-based movement
-                # CRITICAL FIX: Only accumulate progress if the NEXT tile is actually passable
-                # This prevents the tank from "penetrating" halfway into a wall
-                next_x = tank.x + tank.direction[0]
-                next_y = tank.y + tank.direction[1]
+            # Only move if direction is set (not NONE)
+            if tank.direction_name == 'NONE':
+                continue
+            
+            # Calculate next tile position (always integer)
+            next_x = int(tank.x) + tank.direction[0]
+            next_y = int(tank.y) + tank.direction[1]
+            
+            # Only accumulate progress if next tile is passable
+            if self.collision_detector.can_tank_move_to(tank, next_x, next_y):
+                tank.move_progress += tank.speed * dt
+            else:
+                # Blocked - stop accumulating progress
+                tank.move_progress = 0.0
+            
+            # Check if we've accumulated enough progress for a full tile move
+            while tank.move_progress >= 1.0:
+                # Re-verify path at the moment of transition
+                next_x = int(tank.x) + tank.direction[0]
+                next_y = int(tank.y) + tank.direction[1]
                 
                 if self.collision_detector.can_tank_move_to(tank, next_x, next_y):
-                    tank.move_progress += tank.speed * dt
+                    tank.x = next_x
+                    tank.y = next_y
+                    tank.move_progress -= 1.0
                 else:
-                    tank.move_progress = 0.0  # Stop immediately if blocked
-                
-                # Check if we've accumulated enough progress for a full tile move
-                while tank.move_progress >= 1.0:
-                    # Re-verify path at the moment of transition
-                    if self.collision_detector.can_tank_move_to(tank, next_x, next_y):
-                        tank.x = next_x
-                        tank.y = next_y
-                        tank.move_progress -= 1.0
-                        # Update next_x/y for multi-tile progress
-                        next_x = tank.x + tank.direction[0]
-                        next_y = tank.y + tank.direction[1]
-                    else:
-                        tank.move_progress = 0.0
-                        break
+                    tank.move_progress = 0.0
+                    break
         
         # Check for enemy collision with player (damage — only on ENTRY, not every frame)
         # BUG 6 fix: without this, an enemy standing on the player deals 60 HP/sec
@@ -379,6 +380,9 @@ class GameState:
             if result.get('eagle_destroyed'):
                 self.phase = GamePhase.GAME_OVER
                 self.add_event('game_over', {'reason': 'eagle_destroyed'})
+        
+        # Clean up all dead bullets from collision resolution
+        self.bullets.bullets = [b for b in self.bullets.bullets if b.alive]
         
         # Remove dead tanks
         dead_tanks = [t for t in self.tanks if not t.alive]

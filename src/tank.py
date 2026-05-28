@@ -59,8 +59,8 @@ class Tank:
             props = TANK_TYPES[type_name]
         
         # Position
-        self.x = x
-        self.y = y
+        self.x = int(x)
+        self.y = int(y)
         
         # Health & stats
         self.max_hp = props['hp']
@@ -73,8 +73,8 @@ class Tank:
         self.direction_name = 'UP'
         self.move_progress = 0.0  # Progress toward next tile (0.0 to 1.0)
         self.is_moving = False
-        self.target_x = x  # Target tile for current movement
-        self.target_y = y
+        self.target_x = int(x)  # Target tile for current movement
+        self.target_y = int(y)
         self.move_cooldown = 0.0  # Cooldown timer between moves (for player)
         
         # Shooting
@@ -140,10 +140,10 @@ class Tank:
 
     def set_position(self, x, y):
       
-        self.x = x
-        self.y = y
-        self.target_x = x
-        self.target_y = y
+        self.x = int(x)
+        self.y = int(y)
+        self.target_x = int(x)
+        self.target_y = int(y)
         self.move_progress = 0.0
 
     def get_forward_tile(self):

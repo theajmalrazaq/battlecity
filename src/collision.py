@@ -41,20 +41,34 @@ class CollisionDetector:
         
         # Check bounds
         if not self.grid.is_valid(bx, by):
-            return 'bounds'
+            return ('bounds', (bx, by))
         
         terrain = self.grid.get_terrain(bx, by)
         
         if terrain == TERRAIN['BRICK']:
-            return 'brick'
+            return ('brick', (bx, by))
         elif terrain == TERRAIN['STEEL']:
-            return 'steel'
+            return ('steel', (bx, by))
         elif terrain == TERRAIN['WATER']:
-            return None  # Bullets pass OVER water (tanks blocked, bullets fly through)
+            return (None, None)  # Bullets pass OVER water (tanks blocked, bullets fly through)
         elif terrain == TERRAIN['EAGLE']:
-            return 'eagle'
+            return ('eagle', (bx, by))
         
-        return None
+        # Also check the next tile in the direction of movement
+        # This ensures we detect bricks immediately in front
+        next_x = bx + bullet.dx
+        next_y = by + bullet.dy
+        
+        if self.grid.is_valid(next_x, next_y):
+            next_terrain = self.grid.get_terrain(next_x, next_y)
+            if next_terrain == TERRAIN['BRICK']:
+                return ('brick', (next_x, next_y))
+            elif next_terrain == TERRAIN['STEEL']:
+                return ('steel', (next_x, next_y))
+            elif next_terrain == TERRAIN['EAGLE']:
+                return ('eagle', (next_x, next_y))
+        
+        return (None, None)
 
     def check_bullet_vs_tank(self, bullet):
        
@@ -86,14 +100,24 @@ class CollisionDetector:
             if not bullet.alive:
                 continue
             
+            # Check vs tank FIRST (more important than lookahead for bricks)
+            tank_hit = self.check_bullet_vs_tank(bullet)
+            if tank_hit:
+                events.append({
+                    'type': 'tank',
+                    'bullet': bullet,
+                    'target': tank_hit
+                })
+                continue
+            
             # Check vs terrain
-            terrain_hit = self.check_bullet_vs_terrain(bullet)
+            terrain_hit, terrain_pos = self.check_bullet_vs_terrain(bullet)
             if terrain_hit == 'brick':
                 events.append({
                     'type': 'terrain',
                     'bullet': bullet,
                     'target': 'brick',
-                    'position': bullet.get_tile_position()
+                    'position': terrain_pos
                 })
                 continue
             elif terrain_hit in ['steel', 'water', 'bounds']:
@@ -108,16 +132,6 @@ class CollisionDetector:
                     'type': 'eagle',
                     'bullet': bullet,
                     'owner': bullet.owner
-                })
-                continue
-            
-            # Check vs tank
-            tank_hit = self.check_bullet_vs_tank(bullet)
-            if tank_hit:
-                events.append({
-                    'type': 'tank',
-                    'bullet': bullet,
-                    'target': tank_hit
                 })
                 continue
             

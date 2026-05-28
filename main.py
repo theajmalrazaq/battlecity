@@ -162,54 +162,31 @@ class BattleCityGame:
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     self.running = False
-                elif event.key == pygame.K_SPACE:
+                elif event.key == pygame.K_p:
                     self.paused = not self.paused
                 # Shoot on KEY DOWN (edge trigger — catches quick taps)
-                elif not self.paused and event.key in (pygame.K_b, pygame.K_LSHIFT):
+                elif not self.paused and event.key in (pygame.K_b, pygame.K_SPACE):
                     input_state['shoot'] = True
-                # Track most recently pressed direction
-                elif not self.paused and event.key in (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT):
-                    if event.key == pygame.K_UP:
-                        self.last_direction_pressed = 'UP'
-                    elif event.key == pygame.K_DOWN:
-                        self.last_direction_pressed = 'DOWN'
-                    elif event.key == pygame.K_LEFT:
-                        self.last_direction_pressed = 'LEFT'
-                    elif event.key == pygame.K_RIGHT:
-                        self.last_direction_pressed = 'RIGHT'
         
         if not self.paused:
             keys = pygame.key.get_pressed()
             
-            # Check if the last pressed direction is still held
-            direction_map = {
-                'UP': pygame.K_UP,
-                'DOWN': pygame.K_DOWN,
-                'LEFT': pygame.K_LEFT,
-                'RIGHT': pygame.K_RIGHT
-            }
-            
-            if self.last_direction_pressed != 'NONE' and keys[direction_map[self.last_direction_pressed]]:
-                # Last pressed direction is still held
-                new_dir = self.last_direction_pressed
-            else:
-                # Last direction released, check for other pressed keys
-                new_dir = 'NONE'
-                if keys[pygame.K_UP]: new_dir = 'UP'
-                elif keys[pygame.K_DOWN]: new_dir = 'DOWN'
-                elif keys[pygame.K_LEFT]: new_dir = 'LEFT'
-                elif keys[pygame.K_RIGHT]: new_dir = 'RIGHT'
-                
-                # Update last pressed direction
-                if new_dir != 'NONE':
-                    self.last_direction_pressed = new_dir
-                else:
-                    self.last_direction_pressed = 'NONE'
+            # Simple priority-based direction input: prefer most recently pressed key
+            # Check in reverse order (RIGHT, LEFT, DOWN, UP) so UP takes priority if multiple pressed
+            new_dir = 'NONE'
+            if keys[pygame.K_UP]:
+                new_dir = 'UP'
+            if keys[pygame.K_DOWN]:
+                new_dir = 'DOWN'
+            if keys[pygame.K_LEFT]:
+                new_dir = 'LEFT'
+            if keys[pygame.K_RIGHT]:
+                new_dir = 'RIGHT'
             
             input_state['direction'] = new_dir
             
         
-            if keys[pygame.K_b] or keys[pygame.K_LSHIFT]:
+            if keys[pygame.K_b] or keys[pygame.K_SPACE]:
                 input_state['shoot'] = True
         
         return input_state
@@ -220,7 +197,8 @@ class BattleCityGame:
             return
         
      
-        self.screen.fill((0, 0, 0))
+        # Modern dark background with subtle gradient feel
+        self.screen.fill((8, 12, 20))
         
 
         y_offset = 40
@@ -260,19 +238,19 @@ class BattleCityGame:
             pygame.display.flip()
 
     def _get_terrain_color(self, terrain):
-        """Get color for terrain type (Fallback)."""
+        """Get modern color scheme for terrain type."""
         colors = {
-            TERRAIN['EMPTY']: (0, 0, 0),            
-            TERRAIN['BRICK']: (200, 100, 50),
-            TERRAIN['STEEL']: (100, 100, 120),
-            TERRAIN['WATER']: (0, 0, 255),
-            TERRAIN['FOREST']: (0, 255, 0),
-            TERRAIN['EAGLE']: (255, 215, 0)
+            TERRAIN['EMPTY']: (8, 12, 20),           # Dark background
+            TERRAIN['BRICK']: (180, 100, 60),        # Modern orange-brown
+            TERRAIN['STEEL']: (120, 140, 160),       # Modern gray-blue
+            TERRAIN['WATER']: (60, 140, 200),        # Modern blue
+            TERRAIN['FOREST']: (80, 140, 80),        # Modern green
+            TERRAIN['EAGLE']: (255, 200, 60)         # Golden
         }
-        return colors.get(terrain, (0, 0, 0))
+        return colors.get(terrain, (8, 12, 20))
 
     def _draw_tank(self, tank):
-        """Draw a tank on screen using sprites with smooth pixel interpolation."""
+        """Draw a tank on screen with modern styling."""
         y_offset = 40
         
    
@@ -309,23 +287,27 @@ class BattleCityGame:
             radius = TILE_SIZE // 3
             pygame.draw.circle(self.screen, tank.color, (x, y), radius)
             if tank.is_player:
-                pygame.draw.circle(self.screen, (255, 255, 0), (x, y), radius + 2, 2)
+                # Player outline with modern styling
+                pygame.draw.circle(self.screen, (100, 200, 255), (x, y), radius + 2, 2)
         
-        # Draw health bar for Armor/Boss tanks
+        # Draw modern health bar for Armor/Boss tanks
         if tank.hp > 1:
             bar_width = TILE_SIZE - 4
             bar_height = 4
             fill = (tank.hp / tank.max_hp) * bar_width
+            bar_x = rect_x + 2
+            bar_y = rect_y + 2
             
-            # Background (Red)
-            pygame.draw.rect(self.screen, (100, 0, 0), (rect_x + 2, rect_y + 2, bar_width, bar_height))
-            # Foreground (Green)
-            pygame.draw.rect(self.screen, (0, 255, 0), (rect_x + 2, rect_y + 2, fill, bar_height))
-            # Border
-            pygame.draw.rect(self.screen, (255, 255, 255), (rect_x + 2, rect_y + 2, bar_width, bar_height), 1)
+            # Modern gradient-like effect with background
+            pygame.draw.rect(self.screen, (60, 20, 20), (bar_x, bar_y, bar_width, bar_height))
+            # Health bar with better colors
+            health_color = (100, 255, 100) if tank.hp > tank.max_hp * 0.5 else (255, 150, 100)
+            pygame.draw.rect(self.screen, health_color, (bar_x, bar_y, fill, bar_height))
+            # Modern border
+            pygame.draw.rect(self.screen, (150, 150, 150), (bar_x, bar_y, bar_width, bar_height), 1)
 
     def _draw_bullet(self, bullet):
-        """Draw a bullet on screen."""
+        """Draw a bullet on screen with modern styling."""
         y_offset = 40
         bx, by = bullet.get_precise_position()
         x = bx * TILE_SIZE + TILE_SIZE // 2
@@ -336,22 +318,40 @@ class BattleCityGame:
         if sprite:
             self.screen.blit(sprite, (int(x) - 3, int(y) - 3))
         else:
-            color = (0, 255, 255) if bullet.owner and bullet.owner.is_player else (255, 255, 0)
+            # Modern colors for bullets
+            color = (100, 200, 255) if bullet.owner and bullet.owner.is_player else (255, 180, 100)
             pygame.draw.circle(self.screen, color, (int(x), int(y)), 3)
+            # Add glow effect
+            pygame.draw.circle(self.screen, color, (int(x), int(y)), 5, 1)
 
     def _draw_hud(self):
-        """Draw heads-up display."""
+        """Draw modern heads-up display."""
         if not PYGAME_AVAILABLE:
             return
         
         font = self._font_hud
         status = self.state.get_status()
         
-        texts = [
-            f"LVL {status['level']} | LIVES: {status['player_lives']}",
-        ]
+        # Modern HUD background with gradient effect
+        hud_bg_color = (12, 18, 35)
+        hud_accent_color = (100, 180, 255)
         
+        # Draw HUD background
+        pygame.draw.rect(self.screen, hud_bg_color, (0, 0, self.WIDTH, 40))
+        # Top border accent
+        pygame.draw.line(self.screen, hud_accent_color, (0, 39), (self.WIDTH, 39), 2)
         
+        # Create status information with better spacing
+        small_font = pygame.font.Font(None, 22)
+        
+        # Left section: Level and Lives
+        level_text = small_font.render(f"LVL {status['level']}", True, (100, 200, 255))
+        lives_text = small_font.render(f"LIVES: {status['player_lives']}", True, (100, 200, 255))
+        
+        self.screen.blit(level_text, (15, 9))
+        self.screen.blit(lives_text, (100, 9))
+        
+        # Middle section: Enemy/Boss info
         if self.level == 'BOSS':
             boss_tank = None
             for tank in self.state.tanks:
@@ -360,36 +360,51 @@ class BattleCityGame:
                     break
             
             if boss_tank:
-                phase_label = {1: 'AGGR', 2: 'TACT', 3: 'DESP'}.get(boss_tank.phase, '?')
-                texts.append(f"BOSS HP: {boss_tank.hp}/10 | {phase_label}")
+                phase_label = {1: 'PHASE 1', 2: 'PHASE 2', 3: 'PHASE 3'}.get(boss_tank.phase, 'UNKNOWN')
+                boss_info = small_font.render(f"BOSS: {boss_tank.hp}/10 HP | {phase_label}", True, (255, 120, 80))
+                self.screen.blit(boss_info, (290, 9))
             else:
-                texts.append("BOSS DEFEATED!")
+                victory = small_font.render("⭐ BOSS DEFEATED! ⭐", True, (255, 215, 0))
+                self.screen.blit(victory, (290, 9))
         else:
-            texts.append(f"ENEMY: {status['enemies_defeated']} | REM: {status['enemies_remaining']}")
+            enemy_info = small_font.render(f"DEFEATED: {status['enemies_defeated']}  |  REMAINING: {status['enemies_remaining']}", True, (100, 200, 255))
+            self.screen.blit(enemy_info, (290, 9))
         
-        texts.append(f"TIME: {status['time']:.0f}s")
+        # Right section: Time
+        time_text = small_font.render(f"TIME: {status['time']:.0f}s", True, (100, 200, 255))
+        time_rect = time_text.get_rect(right=self.WIDTH - 15, top=9)
+        self.screen.blit(time_text, time_rect)
         
-     
-        pygame.draw.rect(self.screen, (20, 20, 25), (0, 0, self.WIDTH, 40))
-        pygame.draw.line(self.screen, (255, 200, 50), (0, 39), (self.WIDTH, 39), 2) # Golden divider
+        # Bottom-right controls hint (subtle)
+        ctrl_font = pygame.font.Font(None, 16)
+        ctrl_surface = ctrl_font.render("↑↓←→ Move  |  SPACE Shoot  |  P Pause", True, (80, 120, 160))
+        ctrl_rect = ctrl_surface.get_rect(right=self.WIDTH - 10, bottom=self.HEIGHT - 5)
+        self.screen.blit(ctrl_surface, ctrl_rect)
         
-        font = pygame.font.Font(None, 24)
-        hud_str = "   ".join(texts)
-        surface = font.render(hud_str, True, (255, 255, 255))
-        self.screen.blit(surface, (20, 10))
-
-        ctrl_font = pygame.font.Font(None, 18)
-        ctrl_surface = ctrl_font.render("ARROWS: Move | B: Shoot | SPACE: Pause", True, (100, 100, 100))
-        self.screen.blit(ctrl_surface, (self.WIDTH - 250, self.HEIGHT - 20))
-        
+        # Pause overlay
         if self.paused:
-            pause_surface = font.render("PAUSED", True, (255, 255, 0))
-            self.screen.blit(pause_surface, (self.WIDTH // 2 - 40, self.HEIGHT // 2))
+            # Semi-transparent overlay
+            overlay = pygame.Surface((self.WIDTH, self.HEIGHT))
+            overlay.set_alpha(100)
+            overlay.fill((0, 0, 0))
+            self.screen.blit(overlay, (0, 0))
+            
+            # Pause text
+            pause_font = pygame.font.Font(None, 60)
+            pause_surface = pause_font.render("PAUSED", True, (255, 200, 80))
+            pause_rect = pause_surface.get_rect(center=(self.WIDTH // 2, self.HEIGHT // 2))
+            
+            # Background box for pause text
+            box_rect = pause_rect.inflate(100, 50)
+            pygame.draw.rect(self.screen, (30, 40, 70), box_rect)
+            pygame.draw.rect(self.screen, (100, 180, 255), box_rect, 3)
+            
+            self.screen.blit(pause_surface, pause_rect)
 
     def run(self):
         """Main game loop."""
         print(f"Starting Battle City - Level {self.level}")
-        print("Controls: Arrow Keys = Move, B / Shift = Shoot, Space = Pause, ESC = Quit")
+        print("Controls: Arrow Keys = Move, SPACE / B = Shoot, P = Pause, ESC = Quit")
         
         if self.use_graphics:
             self._run_with_graphics()
